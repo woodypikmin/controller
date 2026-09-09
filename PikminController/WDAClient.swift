@@ -22,7 +22,7 @@ actor WDAClient {
     static let shared = WDAClient()
 
     private let base = URL(string: "http://127.0.0.1:8100")!
-    private(set) var sessionId: String?
+    private var sessionId: String?
 
     private func request(
         path: String,
@@ -56,40 +56,8 @@ actor WDAClient {
         guard let dict = object as? [String: Any] else {
             throw WDAError.invalidResponse
         }
+
         return dict
-    }
-
-    private func extractSessionId(_ d: [String: Any]) -> String? {
-        if let id = d["sessionId"] as? String, !id.isEmpty { return id }
-        if let v = d["value"] as? [String: Any],
-           let id = v["sessionId"] as? String,
-           !id.isEmpty { return id }
-        return nil
-    }
-
-    func status() async throws -> String {
-        String(describing: try await request(path: "status", timeout: 8))
-    }
-
-    func createGenericSession() async throws -> String {
-        let d = try await request(
-            path: "session",
-            method: "POST",
-            json: [
-                "capabilities": [
-                    "alwaysMatch": [:]
-                ]
-            ],
-            timeout: 30
-        )
-
-        guard let id = extractSessionId(d) else {
-            throw WDAError.server("No sessionId: \(d)")
-        }
-
-        sessionId = id
-        UserDefaults.standard.set(id, forKey: "lastWDASessionId")
-        return id
     }
 
     private func ensureSession() throws -> String {
@@ -104,6 +72,43 @@ actor WDAClient {
         throw WDAError.noSession
     }
 
+    func status() async throws {
+        _ = try await request(path: "status", timeout: 8)
+    }
+
+    func createGenericSession() async throws -> String {
+        let d = try await request(
+            path: "session",
+            method: "POST",
+            json: [
+                "capabilities": [
+                    "alwaysMatch": [:]
+                ]
+            ],
+            timeout: 30
+        )
+
+        var found: String?
+
+        if let id = d["sessionId"] as? String {
+            found = id
+        }
+
+        if found == nil,
+           let value = d["value"] as? [String: Any],
+           let id = value["sessionId"] as? String {
+            found = id
+        }
+
+        guard let id = found, !id.isEmpty else {
+            throw WDAError.server("No sessionId returned: \(d)")
+        }
+
+        sessionId = id
+        UserDefaults.standard.set(id, forKey: "lastWDASessionId")
+        return id
+    }
+
     func launchPikmin() async throws {
         let id = try ensureSession()
 
@@ -115,24 +120,53 @@ actor WDAClient {
         )
     }
 
-    func screenshotData() async throws -> Data {
+    func screenshot() async throws -> UIImage {
         let d = try await request(path: "screenshot", timeout: 15)
 
         guard let b64 = d["value"] as? String,
-              let data = Data(base64Encoded: b64) else {
-            throw WDAError.invalidScreenshot
-        }
-
-        return data
-    }
-
-    func screenshot() async throws -> UIImage {
-        let data = try await screenshotData()
-
-        guard let image = UIImage(data: data) else {
+              let data = Data(base64Encoded: b64),
+              let image = UIImage(data: data) else {
             throw WDAError.invalidScreenshot
         }
 
         return image
+    }
+
+    func windowSize() async throws -> CGSize {
+        let id = try ensureSession()
+
+        let d = try await request(
+            path: "session/\(id)/window/size",
+            timeout: 10
+        )
+
+        if let value = d["value"] as? [String: Any] {
+            let w = (value["width"] as? NSNumber)?.doubleValue ?? 402
+            let h = (value["height"] as? NSNumber)?.doubleValue ?? 874
+            return CGSize(width: w, height: h)
+        }
+
+        return CGSize(width: 402, height: 874)
+    }
+
+    func tap(x: Double, y: Double) async throws {
+        let id = try ensureSession()
+        let body: [String: Any] = ["x": x, "y": y]
+
+        do {
+            _ = try await request(
+                path: "session/\(id)/wda/tap",
+                method: "POST",
+                json: body,
+                timeout: 15
+            )
+        } catch {
+            _ = try await request(
+                path: "session/\(id)/wda/tap/0",
+                method: "POST",
+                json: body,
+                timeout: 15
+            )
+        }
     }
 }
