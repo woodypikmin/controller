@@ -71,7 +71,7 @@ struct ContentView: View {
                     .disabled(!sessionOK)
                 }
 
-                Section("Stage 4 - Two Dispatch Test") {
+                Section("Stage 4.1 - Two Dispatch Test") {
                     Button(
                         "RUN TWO DISPATCHES"
                     ) {
@@ -153,7 +153,7 @@ struct ContentView: View {
                 }
             }
             .navigationTitle(
-                "Controller 0.4.0"
+                "Controller 0.4.1"
             )
             .onChange(
                 of: scenePhase
