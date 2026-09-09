@@ -47,57 +47,44 @@ actor WDAClient {
         }
 
         guard (200...299).contains(http.statusCode) else {
-            let text = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw WDAError.server(text)
+            throw WDAError.server(
+                String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
+            )
         }
 
         let object = try JSONSerialization.jsonObject(with: data)
         guard let dict = object as? [String: Any] else {
             throw WDAError.invalidResponse
         }
-
         return dict
     }
 
-    private func sessionId(from response: [String: Any]) -> String? {
-        if let id = response["sessionId"] as? String, !id.isEmpty {
-            return id
-        }
-
-        if let value = response["value"] as? [String: Any] {
-            if let id = value["sessionId"] as? String, !id.isEmpty {
-                return id
-            }
-        }
-
+    private func extractSessionId(_ d: [String: Any]) -> String? {
+        if let id = d["sessionId"] as? String, !id.isEmpty { return id }
+        if let v = d["value"] as? [String: Any],
+           let id = v["sessionId"] as? String,
+           !id.isEmpty { return id }
         return nil
     }
 
     func status() async throws -> String {
-        let value = try await request(path: "status", timeout: 8)
-        return String(describing: value)
+        String(describing: try await request(path: "status", timeout: 8))
     }
 
     func createGenericSession() async throws -> String {
-        // This mirrors SideTap's current session creation:
-        // POST /session {"capabilities":{"alwaysMatch":{}}}
-        //
-        // No bundleId = do NOT relaunch Pikmin Controller.
-        let body: [String: Any] = [
-            "capabilities": [
-                "alwaysMatch": [:]
-            ]
-        ]
-
-        let response = try await request(
+        let d = try await request(
             path: "session",
             method: "POST",
-            json: body,
+            json: [
+                "capabilities": [
+                    "alwaysMatch": [:]
+                ]
+            ],
             timeout: 30
         )
 
-        guard let id = sessionId(from: response) else {
-            throw WDAError.server("No sessionId returned: \(response)")
+        guard let id = extractSessionId(d) else {
+            throw WDAError.server("No sessionId: \(d)")
         }
 
         sessionId = id
@@ -105,10 +92,8 @@ actor WDAClient {
         return id
     }
 
-    func restoreSavedSession() -> String? {
-        if let current = sessionId {
-            return current
-        }
+    private func ensureSession() throws -> String {
+        if let id = sessionId { return id }
 
         if let saved = UserDefaults.standard.string(forKey: "lastWDASessionId"),
            !saved.isEmpty {
@@ -116,58 +101,35 @@ actor WDAClient {
             return saved
         }
 
-        return nil
-    }
-
-    func activeAppInfo() async throws -> String {
-        guard let id = sessionId ?? restoreSavedSession() else {
-            throw WDAError.noSession
-        }
-
-        let response = try await request(
-            path: "session/\(id)/wda/activeAppInfo",
-            timeout: 10
-        )
-
-        return String(describing: response)
+        throw WDAError.noSession
     }
 
     func launchPikmin() async throws {
-        guard let id = sessionId ?? restoreSavedSession() else {
-            throw WDAError.noSession
-        }
-
-        // Write this BEFORE sending the launch request. If iOS backgrounds
-        // Controller immediately, we can still tell the request was sent.
-        UserDefaults.standard.set(
-            Date().timeIntervalSince1970,
-            forKey: "pikminLaunchSentAt"
-        )
+        let id = try ensureSession()
 
         _ = try await request(
             path: "session/\(id)/wda/apps/launch",
             method: "POST",
-            json: [
-                "bundleId": "com.nianticlabs.pikmin"
-            ],
+            json: ["bundleId": "com.nianticlabs.pikmin"],
             timeout: 20
-        )
-
-        UserDefaults.standard.set(
-            true,
-            forKey: "pikminLaunchGotHTTP200"
         )
     }
 
-    func screenshot() async throws -> UIImage {
-        let response = try await request(
-            path: "screenshot",
-            timeout: 15
-        )
+    func screenshotData() async throws -> Data {
+        let d = try await request(path: "screenshot", timeout: 15)
 
-        guard let b64 = response["value"] as? String,
-              let data = Data(base64Encoded: b64),
-              let image = UIImage(data: data) else {
+        guard let b64 = d["value"] as? String,
+              let data = Data(base64Encoded: b64) else {
+            throw WDAError.invalidScreenshot
+        }
+
+        return data
+    }
+
+    func screenshot() async throws -> UIImage {
+        let data = try await screenshotData()
+
+        guard let image = UIImage(data: data) else {
             throw WDAError.invalidScreenshot
         }
 

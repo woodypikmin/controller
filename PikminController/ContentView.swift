@@ -3,96 +3,82 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var probe = BackgroundProbe.shared
 
     @State private var log = "Ready."
     @State private var wdaOK = false
     @State private var sessionOK = false
     @State private var screenshot: UIImage?
+    @State private var resultImage: UIImage?
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("1. WDA") {
-                    Button("Check WDA") {
+                Section("Setup") {
+                    Button("1. Check WDA") {
                         Task { await checkWDA() }
                     }
 
-                    Text(wdaOK ? "WDA READY" : "WDA NOT CHECKED")
-                        .foregroundStyle(wdaOK ? .green : .secondary)
-                }
-
-                Section("2. Generic session") {
-                    Button("Create GENERIC WDA Session") {
-                        Task { await createGenericSession() }
+                    Button("2. Create GENERIC Session") {
+                        Task { await createSession() }
                     }
                     .disabled(!wdaOK)
-
-                    Text("""
-                    這次不指定任何 bundleId，
-                    所以 WDA 不會把 Controller 自己重開。
-                    """)
-                    .font(.caption)
 
                     Text(sessionOK ? "SESSION READY" : "NO SESSION")
                         .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("3. Verify session") {
-                    Button("Get Active App Info") {
-                        Task { await activeInfo() }
+                Section("Background execution test") {
+                    Button("TEST: launch Pikmin + screenshot after 5 sec") {
+                        probe.run(delaySeconds: 5)
                     }
                     .disabled(!sessionOK)
-                }
 
-                Section("4. Launch Pikmin") {
-                    Button("LAUNCH PIKMIN") {
-                        Task { await launchPikmin() }
+                    Button("TEST: launch Pikmin + screenshot after 20 sec") {
+                        probe.run(delaySeconds: 20)
                     }
                     .disabled(!sessionOK)
 
                     Text("""
-                    如果按下後 Pikmin Bloom 跳到前景，
-                    就算 Controller 被切到背景也算這一步成功。
+                    按下後不要自己切回 Controller。
+                    讓 Pikmin 留在前景至少超過測試秒數，
+                    然後再手動回 Controller 看結果。
                     """)
                     .font(.caption)
                 }
 
-                Section("Screenshot") {
-                    Button("Get WDA Screenshot") {
-                        Task { await shot() }
+                Section("Saved background result") {
+                    Button("Refresh Result") {
+                        loadProbeResult()
                     }
-                    .disabled(!wdaOK)
 
-                    if let screenshot {
-                        Image(uiImage: screenshot)
+                    Text(BackgroundProbe.savedStatus())
+                        .font(.system(.caption, design: .monospaced))
+
+                    if let resultImage {
+                        Text("Screenshot captured by background Controller:")
+                            .font(.caption)
+
+                        Image(uiImage: resultImage)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxHeight: 280)
+                            .frame(maxHeight: 330)
                     }
-                }
-
-                Section("Persisted diagnostics") {
-                    Button("Refresh Saved Result") {
-                        refreshPersisted()
-                    }
-
-                    Text(savedDiagnosticText())
-                        .font(.system(.caption, design: .monospaced))
                 }
 
                 Section("Log") {
+                    Text(probe.state)
+                        .font(.system(.caption, design: .monospaced))
+
                     Text(log)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                 }
             }
-            .navigationTitle("Controller 0.1.3")
+            .navigationTitle("Controller 0.1.4")
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
-                    if WDAClientSync.restorePossible {
-                        sessionOK = true
-                    }
-                    refreshPersisted()
+                    loadProbeResult()
                 }
             }
         }
@@ -110,86 +96,25 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func createGenericSession() async {
-        log = "Creating GENERIC session..."
-
+    private func createSession() async {
         do {
             let id = try await WDAClient.shared.createGenericSession()
             sessionOK = true
             log = "GENERIC SESSION OK\n\(id)"
         } catch {
             sessionOK = false
-            log = "GENERIC SESSION FAILED\n\(error.localizedDescription)"
+            log = "SESSION FAILED\n\(error.localizedDescription)"
         }
     }
 
-    @MainActor
-    private func activeInfo() async {
-        do {
-            log = "ACTIVE APP\n" + (try await WDAClient.shared.activeAppInfo())
-        } catch {
-            log = "ACTIVE APP FAILED\n\(error.localizedDescription)"
-        }
-    }
+    private func loadProbeResult() {
+        let url = BackgroundProbe.resultURL
 
-    @MainActor
-    private func launchPikmin() async {
-        log = "Launch command sent. Watch what the PHONE does."
-
-        do {
-            try await WDAClient.shared.launchPikmin()
-            log = "WDA returned HTTP success for Pikmin launch."
-        } catch {
-            log = """
-            Launch request ended with:
-            \(error.localizedDescription)
-
-            If Pikmin opened anyway, the launch itself succeeded.
-            """
-        }
-    }
-
-    @MainActor
-    private func shot() async {
-        do {
-            screenshot = try await WDAClient.shared.screenshot()
-            log = "SCREENSHOT OK"
-        } catch {
-            log = "SCREENSHOT FAILED\n\(error.localizedDescription)"
-        }
-    }
-
-    private func refreshPersisted() {
-        if UserDefaults.standard.string(forKey: "lastWDASessionId") != nil {
-            sessionOK = true
-        }
-    }
-
-    private func savedDiagnosticText() -> String {
-        let defaults = UserDefaults.standard
-        let sid = defaults.string(forKey: "lastWDASessionId") ?? "(none)"
-        let sent = defaults.double(forKey: "pikminLaunchSentAt")
-        let got200 = defaults.bool(forKey: "pikminLaunchGotHTTP200")
-
-        var parts = [
-            "saved session: \(sid)",
-            "launch HTTP 200: \(got200)"
-        ]
-
-        if sent > 0 {
-            parts.append("launch request timestamp: \(sent)")
+        if let data = try? Data(contentsOf: url),
+           let image = UIImage(data: data) {
+            resultImage = image
         } else {
-            parts.append("launch request: not sent")
+            resultImage = nil
         }
-
-        return parts.joined(separator: "\n")
-    }
-}
-
-// Tiny synchronous helper only for restoring UI state.
-enum WDAClientSync {
-    static var restorePossible: Bool {
-        let value = UserDefaults.standard.string(forKey: "lastWDASessionId")
-        return !(value ?? "").isEmpty
     }
 }
