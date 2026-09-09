@@ -13,9 +13,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1</string>
+    <string>0.1.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>NSAppTransportSecurity</key>
@@ -26,6 +26,6 @@
         <true/>
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Connect to the local WebDriverAgent service on this iPhone.</string>
+    <string>Connect to WebDriverAgent on this iPhone.</string>
 </dict>
 </plist>

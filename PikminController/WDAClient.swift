@@ -15,9 +15,9 @@ enum WDAError: LocalizedError {
         case .server(let text):
             return text
         case .noSession:
-            return "No WDA session. Create a Pikmin session first."
+            return "No WDA session."
         case .invalidScreenshot:
-            return "Could not decode WDA screenshot."
+            return "Could not decode screenshot."
         }
     }
 }
@@ -31,12 +31,13 @@ actor WDAClient {
     private func request(
         path: String,
         method: String = "GET",
-        json: [String: Any]? = nil
+        json: [String: Any]? = nil,
+        timeout: TimeInterval = 8
     ) async throws -> [String: Any] {
         let url = base.appendingPathComponent(path)
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.timeoutInterval = 8
+        req.timeoutInterval = timeout
 
         if let json {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -55,7 +56,6 @@ actor WDAClient {
         }
 
         let obj = try JSONSerialization.jsonObject(with: data)
-
         guard let dict = obj as? [String: Any] else {
             throw WDAError.invalidResponse
         }
@@ -63,59 +63,68 @@ actor WDAClient {
         return dict
     }
 
-    func status() async throws -> String {
-        let dict = try await request(path: "status")
-        let data = try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])
-        return String(data: data, encoding: .utf8) ?? "WDA OK"
+    func status() async throws -> [String: Any] {
+        try await request(path: "status", timeout: 8)
     }
 
-    func createPikminSession() async throws -> String {
-        // Try W3C capabilities first.
+    private func extractSessionId(_ dict: [String: Any]) -> String? {
+        if let sid = dict["sessionId"] as? String, !sid.isEmpty {
+            return sid
+        }
+
+        if let value = dict["value"] as? [String: Any],
+           let sid = value["sessionId"] as? String,
+           !sid.isEmpty {
+            return sid
+        }
+
+        return nil
+    }
+
+    func createSession(bundleId: String) async throws -> String {
+        // Keep JSONWP desiredCapabilities because raw WDA supports it directly.
+        // Also send an empty W3C capabilities object for newer builds.
         let payload: [String: Any] = [
-            "capabilities": [
-                "alwaysMatch": [
-                    "bundleId": "com.nianticlabs.pikmin",
-                    "shouldWaitForQuiescence": false
-                ],
-                "firstMatch": [[:]]
-            ],
-            // Older WDA builds may still inspect desiredCapabilities.
             "desiredCapabilities": [
-                "bundleId": "com.nianticlabs.pikmin",
-                "shouldWaitForQuiescence": false
-            ]
+                "bundleId": bundleId,
+                "arguments": [],
+                "environment": [:],
+                "shouldWaitForQuiescence": false,
+                "shouldUseSingletonTestManager": true
+            ],
+            "capabilities": [:]
         ]
 
         let dict = try await request(
             path: "session",
             method: "POST",
-            json: payload
+            json: payload,
+            timeout: 60
         )
 
-        var found: String?
-
-        if let sid = dict["sessionId"] as? String {
-            found = sid
-        }
-
-        if found == nil,
-           let value = dict["value"] as? [String: Any],
-           let sid = value["sessionId"] as? String {
-            found = sid
-        }
-
-        guard let sid = found else {
+        guard let sid = extractSessionId(dict) else {
             let data = try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])
             let text = String(data: data, encoding: .utf8) ?? "\(dict)"
-            throw WDAError.server("Session created but sessionId was not found:\n\(text)")
+            throw WDAError.server("No sessionId in response:\n\(text)")
         }
 
         sessionId = sid
         return sid
     }
 
+    func createControllerSession() async throws -> String {
+        guard let id = Bundle.main.bundleIdentifier else {
+            throw WDAError.server("Controller bundle identifier is unavailable.")
+        }
+        return try await createSession(bundleId: id)
+    }
+
+    func createPikminSession() async throws -> String {
+        try await createSession(bundleId: "com.nianticlabs.pikmin")
+    }
+
     func screenshot() async throws -> UIImage {
-        let dict = try await request(path: "screenshot")
+        let dict = try await request(path: "screenshot", timeout: 15)
 
         guard let value = dict["value"] as? String,
               let data = Data(base64Encoded: value),
@@ -131,52 +140,22 @@ actor WDAClient {
             throw WDAError.noSession
         }
 
-        let body: [String: Any] = [
-            "x": x,
-            "y": y
-        ]
+        let body: [String: Any] = ["x": x, "y": y]
 
-        // Current WDA route.
         do {
             _ = try await request(
                 path: "session/\(sid)/wda/tap",
                 method: "POST",
-                json: body
+                json: body,
+                timeout: 15
             )
-            return
         } catch {
-            // Compatibility fallback used by older WDA clients.
             _ = try await request(
                 path: "session/\(sid)/wda/tap/0",
                 method: "POST",
-                json: body
+                json: body,
+                timeout: 15
             )
         }
-    }
-
-    func swipe(
-        fromX: Double,
-        fromY: Double,
-        toX: Double,
-        toY: Double,
-        duration: Double = 0.4
-    ) async throws {
-        guard let sid = sessionId else {
-            throw WDAError.noSession
-        }
-
-        let body: [String: Any] = [
-            "fromX": fromX,
-            "fromY": fromY,
-            "toX": toX,
-            "toY": toY,
-            "duration": duration
-        ]
-
-        _ = try await request(
-            path: "session/\(sid)/wda/dragfromtoforduration",
-            method: "POST",
-            json: body
-        )
     }
 }

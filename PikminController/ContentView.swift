@@ -7,46 +7,39 @@ struct ContentView: View {
     @State private var sessionOK = false
     @State private var screenshot: UIImage?
 
-    @State private var tapX = "201"
-    @State private var tapY = "437"
-
     var body: some View {
         NavigationStack {
             Form {
-                Section("WDA") {
-                    HStack {
-                        Text("Local WDA")
-                        Spacer()
-                        Text(wdaOK ? "READY" : "NOT CHECKED")
-                            .foregroundStyle(wdaOK ? .green : .secondary)
+                Section("1. WDA") {
+                    Button("Check WDA") {
+                        Task { await checkWDA() }
                     }
 
-                    Button("1. Check WDA on 127.0.0.1:8100") {
-                        Task {
-                            await checkWDA()
-                        }
-                    }
+                    Text(wdaOK ? "WDA: READY" : "WDA: NOT CHECKED")
+                        .foregroundStyle(wdaOK ? .green : .secondary)
+                }
 
-                    Button("2. Create Pikmin Session") {
-                        Task {
-                            await createSession()
-                        }
+                Section("2. Session diagnostics") {
+                    Button("Create CONTROLLER Session") {
+                        Task { await createControllerSession() }
                     }
                     .disabled(!wdaOK)
 
-                    HStack {
-                        Text("Pikmin session")
-                        Spacer()
-                        Text(sessionOK ? "READY" : "NO")
-                            .foregroundStyle(sessionOK ? .green : .secondary)
+                    Text("先按這個。它不會切去 Pikmin，用來確認 WDA session 本身正常。")
+                        .font(.caption)
+
+                    Button("Create PIKMIN Session (wait up to 60s)") {
+                        Task { await createPikminSession() }
                     }
+                    .disabled(!wdaOK)
+
+                    Text("這個可能會把 Pikmin Bloom 拉到前景。")
+                        .font(.caption)
                 }
 
-                Section("Screenshot") {
-                    Button("Get iPhone Screenshot Through WDA") {
-                        Task {
-                            await getScreenshot()
-                        }
+                Section("3. Screenshot") {
+                    Button("Get Screenshot") {
+                        Task { await getScreenshot() }
                     }
                     .disabled(!wdaOK)
 
@@ -54,37 +47,8 @@ struct ContentView: View {
                         Image(uiImage: screenshot)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxHeight: 340)
+                            .frame(maxHeight: 320)
                     }
-                }
-
-                Section("Real Tap Test") {
-                    Text("Enter a SAFE coordinate. This sends a real touch to the active app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        TextField("x", text: $tapX)
-                            .keyboardType(.decimalPad)
-                        TextField("y", text: $tapY)
-                            .keyboardType(.decimalPad)
-                    }
-
-                    Button("SEND ONE TAP") {
-                        Task {
-                            await sendTap()
-                        }
-                    }
-                    .disabled(!sessionOK)
-                }
-
-                Section("Swipe Test") {
-                    Button("Swipe Up Once") {
-                        Task {
-                            await sendSwipe()
-                        }
-                    }
-                    .disabled(!sessionOK)
                 }
 
                 Section("Log") {
@@ -93,7 +57,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
                 }
             }
-            .navigationTitle("Pikmin Controller")
+            .navigationTitle("Pikmin Controller 0.1.1")
         }
     }
 
@@ -105,20 +69,35 @@ struct ContentView: View {
             log = "WDA OK\n\(result)"
         } catch {
             wdaOK = false
-            sessionOK = false
-            log = "WDA check FAILED:\n\(error.localizedDescription)"
+            log = "WDA FAILED\n\(error.localizedDescription)"
         }
     }
 
     @MainActor
-    private func createSession() async {
+    private func createControllerSession() async {
+        log = "Creating CONTROLLER session...\nWait up to 60 seconds."
+
+        do {
+            let sid = try await WDAClient.shared.createControllerSession()
+            sessionOK = true
+            log = "CONTROLLER SESSION OK\n\(sid)"
+        } catch {
+            sessionOK = false
+            log = "CONTROLLER SESSION FAILED\n\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func createPikminSession() async {
+        log = "Creating PIKMIN session...\nWait up to 60 seconds.\nIf Pikmin opens, that is important."
+
         do {
             let sid = try await WDAClient.shared.createPikminSession()
             sessionOK = true
-            log = "Pikmin WDA session READY\n\(sid)"
+            log = "PIKMIN SESSION OK\n\(sid)"
         } catch {
             sessionOK = false
-            log = "Create session FAILED:\n\(error.localizedDescription)"
+            log = "PIKMIN SESSION FAILED\n\(error.localizedDescription)"
         }
     }
 
@@ -126,43 +105,9 @@ struct ContentView: View {
     private func getScreenshot() async {
         do {
             screenshot = try await WDAClient.shared.screenshot()
-            log = "Screenshot OK"
+            log = "SCREENSHOT OK"
         } catch {
-            log = "Screenshot FAILED:\n\(error.localizedDescription)"
-        }
-    }
-
-    @MainActor
-    private func sendTap() async {
-        guard let x = Double(tapX),
-              let y = Double(tapY) else {
-            log = "Invalid x/y."
-            return
-        }
-
-        do {
-            try await WDAClient.shared.tap(x: x, y: y)
-            log = "Tap sent: \(x), \(y)"
-        } catch {
-            log = "Tap FAILED:\n\(error.localizedDescription)"
-        }
-    }
-
-    @MainActor
-    private func sendSwipe() async {
-        do {
-            // Coordinates are WDA screen points, matching the 402x874 device dimensions
-            // observed in the user's current setup.
-            try await WDAClient.shared.swipe(
-                fromX: 201,
-                fromY: 680,
-                toX: 201,
-                toY: 320,
-                duration: 0.45
-            )
-            log = "Swipe sent."
-        } catch {
-            log = "Swipe FAILED:\n\(error.localizedDescription)"
+            log = "SCREENSHOT FAILED\n\(error.localizedDescription)"
         }
     }
 }
