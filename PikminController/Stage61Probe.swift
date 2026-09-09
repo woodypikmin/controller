@@ -1,5 +1,6 @@
 
 import Foundation
+import Combine
 
 @MainActor
 final class Stage61Probe: ObservableObject {

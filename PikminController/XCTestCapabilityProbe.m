@@ -3,6 +3,7 @@
 
 #import <dlfcn.h>
 #import <mach/mach.h>
+#import <mach/task_special_ports.h>
 #import <objc/runtime.h>
 
 @implementation XCTestCapabilityProbe
@@ -99,9 +100,8 @@
     out[@"symbolAvailable"] = @YES;
 
     mach_port_t bootstrap = MACH_PORT_NULL;
-    kern_return_t kr = task_get_special_port(
+    kern_return_t kr = task_get_bootstrap_port(
         mach_task_self(),
-        TASK_BOOTSTRAP_PORT,
         &bootstrap
     );
 
@@ -130,14 +130,12 @@
     out[@"success"] = @(success);
     out[@"returnCode"] = @(lookup);
 
-    const char *machText = mach_error_string(lookup);
-    if (machText) {
-        out[@"description"] =
-            [NSString stringWithUTF8String:machText] ?: @"";
-    } else {
-        out[@"description"] =
-            [NSString stringWithFormat:@"mach error %d", lookup];
-    }
+    out[@"description"] =
+        success
+        ? @"lookup succeeded"
+        : [NSString stringWithFormat:
+            @"lookup failed (kern_return_t=%d)",
+            (int)lookup];
 
     if (success) {
         mach_port_deallocate(
