@@ -6,14 +6,13 @@ final class BotProbe: ObservableObject {
     static let shared = BotProbe()
 
     @Published var status = "Ready"
-
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
 
     static var resultURL: URL {
         FileManager.default.urls(
             for: .documentDirectory,
             in: .userDomainMask
-        )[0].appendingPathComponent("stage2_detection.png")
+        )[0].appendingPathComponent("stage2_1_detection.png")
     }
 
     func detectOnly() {
@@ -26,13 +25,13 @@ final class BotProbe: ObservableObject {
 
     private func run(tapFirstAvailable: Bool) {
         status = tapFirstAvailable
-            ? "Launching Pikmin; will detect + tap first AVAILABLE"
-            : "Launching Pikmin; will detect only"
+            ? "Launching Pikmin; OCR + detect + tap first AVAILABLE"
+            : "Launching Pikmin; OCR + detect only"
 
         UserDefaults.standard.set("", forKey: "stage2Status")
 
         bgTask = UIApplication.shared.beginBackgroundTask(
-            withName: "PikminStage2"
+            withName: "PikminStage2_1"
         ) { [weak self] in
             UserDefaults.standard.set(
                 "FAILED: iOS expired background task",
@@ -45,21 +44,25 @@ final class BotProbe: ObservableObject {
             do {
                 try await WDAClient.shared.launchPikmin()
             } catch {
-                // Continue. Launch may still have happened.
+                // Continue; launch may still have occurred.
             }
 
             try? await Task.sleep(nanoseconds: 4_000_000_000)
 
             do {
                 let image = try await WDAClient.shared.screenshot()
-                let fruits = FruitDetector.detect(in: image)
+                let fruits = await FruitDetector.detect(in: image)
+
                 let annotated = FruitDetector.annotated(
                     image: image,
                     fruits: fruits
                 )
 
                 if let png = annotated.pngData() {
-                    try png.write(to: Self.resultURL, options: .atomic)
+                    try png.write(
+                        to: Self.resultURL,
+                        options: .atomic
+                    )
                 }
 
                 let available = fruits.filter { $0.state == .available }
@@ -67,11 +70,23 @@ final class BotProbe: ObservableObject {
                 let complete = fruits.filter { $0.state == .complete }
 
                 var text = """
-                DETECTION OK
+                OCR CARD DETECTION OK
                 available=\(available.count)
                 busy=\(busy.count)
                 complete=\(complete.count)
+
                 """
+
+                for (index, fruit) in fruits.enumerated() {
+                    let cleanText = fruit.cardText
+                        .replacingOccurrences(of: "\n", with: " ")
+
+                    text += """
+                    #\(index + 1) \(fruit.state.rawValue)
+                    OCR: \(cleanText)
+
+                    """
+                }
 
                 if tapFirstAvailable,
                    let first = available.first {
@@ -81,23 +96,27 @@ final class BotProbe: ObservableObject {
                         throw WDAError.invalidScreenshot
                     }
 
-                    let pxW = Double(cg.width)
-                    let pxH = Double(cg.height)
+                    let x = Double(first.center.x)
+                        / Double(cg.width)
+                        * Double(screen.width)
 
-                    let x = Double(first.center.x) / pxW * Double(screen.width)
-                    let y = Double(first.center.y) / pxH * Double(screen.height)
+                    let y = Double(first.center.y)
+                        / Double(cg.height)
+                        * Double(screen.height)
 
                     try await WDAClient.shared.tap(x: x, y: y)
 
                     text += """
-
                     TAP SENT
                     x=\(String(format: "%.1f", x))
                     y=\(String(format: "%.1f", y))
                     """
                 }
 
-                UserDefaults.standard.set(text, forKey: "stage2Status")
+                UserDefaults.standard.set(
+                    text,
+                    forKey: "stage2Status"
+                )
 
                 await MainActor.run {
                     self.status = text
@@ -106,7 +125,11 @@ final class BotProbe: ObservableObject {
 
             } catch {
                 let text = "FAILED: \(error.localizedDescription)"
-                UserDefaults.standard.set(text, forKey: "stage2Status")
+
+                UserDefaults.standard.set(
+                    text,
+                    forKey: "stage2Status"
+                )
 
                 await MainActor.run {
                     self.status = text

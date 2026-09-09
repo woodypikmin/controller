@@ -27,15 +27,15 @@ struct ContentView: View {
                         .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("Stage 2 - On-device detection") {
+                Section("Stage 2.1 - Card OCR") {
                     Button("DETECT ONLY") {
                         probe.detectOnly()
                     }
                     .disabled(!sessionOK)
 
                     Text("""
-                    會叫出 Pikmin，4 秒後由 Controller 在背景截圖並直接在 iPhone 內辨識。
-                    不會點任何水果。
+                    COMPLETE / BUSY 改成讀整張卡片文字。
+                    不再用紅蘋果、桃子的顏色判斷 BUSY。
                     """)
                     .font(.caption)
 
@@ -43,31 +43,29 @@ struct ContentView: View {
                         probe.detectAndTap()
                     }
                     .disabled(!sessionOK)
-
-                    Text("""
-                    只有確認 DETECT ONLY 正確後才按。
-                    它會真的點第一顆判定為 AVAILABLE 的水果。
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.red)
                 }
 
-                Section("Detection result") {
+                Section("Result") {
                     Button("Refresh Result") {
                         loadResult()
                     }
 
+                    Text("""
+                    GREEN = AVAILABLE
+                    RED = BUSY (讀到時間)
+                    BLUE = COMPLETE (讀到完成/領取)
+                    """)
+                    .font(.caption)
+
                     Text(savedStatus())
                         .font(.system(.caption, design: .monospaced))
-
-                    Text("GREEN = AVAILABLE   RED = BUSY   BLUE = COMPLETE")
-                        .font(.caption)
+                        .textSelection(.enabled)
 
                     if let resultImage {
                         Image(uiImage: resultImage)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxHeight: 420)
+                            .frame(maxHeight: 430)
                     }
                 }
 
@@ -78,7 +76,7 @@ struct ContentView: View {
                         .font(.system(.caption, design: .monospaced))
                 }
             }
-            .navigationTitle("Controller 0.2.0")
+            .navigationTitle("Controller 0.2.1")
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     loadResult()
@@ -112,7 +110,9 @@ struct ContentView: View {
     }
 
     private func savedStatus() -> String {
-        UserDefaults.standard.string(forKey: "stage2Status") ?? "(none)"
+        UserDefaults.standard.string(
+            forKey: "stage2Status"
+        ) ?? "(none)"
     }
 
     private func loadResult() {

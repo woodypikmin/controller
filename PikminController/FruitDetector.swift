@@ -1,6 +1,7 @@
 
 import UIKit
 import CoreGraphics
+import Vision
 
 enum CardState: String {
     case available = "AVAILABLE"
@@ -14,6 +15,7 @@ struct FruitCandidate: Identifiable {
     var center: CGPoint
     var fill: Double
     var state: CardState
+    var cardText: String = ""
 }
 
 final class FruitDetector {
@@ -88,12 +90,9 @@ final class FruitDetector {
     }
 
     static func isFruitColor(_ hsv: HSV) -> Bool {
-        let sat = hsv.s
-        let val = hsv.v
-
-        let colorful = sat > 0.34 && val > 0.26
-        let purple = hsv.h >= 240 && hsv.h <= 330 && sat > 0.10 && val > 0.12
-        let red = (hsv.h <= 25 || hsv.h >= 335) && sat > 0.22 && val > 0.20
+        let colorful = hsv.s > 0.34 && hsv.v > 0.26
+        let purple = hsv.h >= 240 && hsv.h <= 330 && hsv.s > 0.10 && hsv.v > 0.12
+        let red = (hsv.h <= 25 || hsv.h >= 335) && hsv.s > 0.22 && hsv.v > 0.20
 
         return colorful || purple || red
     }
@@ -165,7 +164,7 @@ final class FruitDetector {
         return result
     }
 
-    static func detect(in image: UIImage) -> [FruitCandidate] {
+    static func fruitCandidates(in image: UIImage) -> [FruitCandidate] {
         guard let (w,h,data) = rawPixels(image) else { return [] }
 
         let y0 = Int(Double(h) * 0.18)
@@ -175,8 +174,8 @@ final class FruitDetector {
 
         for y in y0..<y1 {
             for x in 0..<w {
-                let hsvValue = hsv(pixel(data, width: w, x: x, y: y))
-                if isFruitColor(hsvValue) {
+                let hv = hsv(pixel(data, width: w, x: x, y: y))
+                if isFruitColor(hv) {
                     mask[y * w + x] = true
                 }
             }
@@ -194,26 +193,15 @@ final class FruitDetector {
 
             let fill = Double(count) / max(1, bw * bh)
 
-            if fill < 0.55 { continue }
-
-            let center = CGPoint(
-                x: rect.midX,
-                y: rect.midY
-            )
-
-            let state = classifyCard(
-                data: data,
-                width: w,
-                height: h,
-                fruitCenter: center
-            )
+            // Keep this permissive enough for orange/red apple/plum.
+            if fill < 0.50 { continue }
 
             fruits.append(
                 FruitCandidate(
                     rect: rect,
-                    center: center,
+                    center: CGPoint(x: rect.midX, y: rect.midY),
                     fill: fill,
-                    state: state
+                    state: .available
                 )
             )
         }
@@ -225,107 +213,277 @@ final class FruitDetector {
             return $0.center.x < $1.center.x
         }
 
-        return fruits
+        // Deduplicate nearby fragments.
+        var dedup: [FruitCandidate] = []
+
+        for fruit in fruits {
+            let tooClose = dedup.contains {
+                abs($0.center.x - fruit.center.x) < Double(w) * 0.045 &&
+                abs($0.center.y - fruit.center.y) < Double(h) * 0.035
+            }
+
+            if !tooClose {
+                dedup.append(fruit)
+            }
+        }
+
+        return dedup
     }
 
-    static func classifyCard(
-        data: [UInt8],
-        width w: Int,
-        height h: Int,
+    static func classify(
+        image: UIImage,
+        fruits: [FruitCandidate]
+    ) async -> [FruitCandidate] {
+        guard let cg = image.cgImage else { return fruits }
+
+        let imageW = CGFloat(cg.width)
+        let imageH = CGFloat(cg.height)
+
+        var out: [FruitCandidate] = []
+
+        for var fruit in fruits {
+            let cardRect = fullCardRect(
+                imageWidth: imageW,
+                imageHeight: imageH,
+                fruitCenter: fruit.center
+            )
+
+            let text = await recognizeText(
+                image: cg,
+                pixelRect: cardRect
+            )
+
+            fruit.cardText = text
+
+            if isCompleteText(text) {
+                fruit.state = .complete
+            } else if isBusyText(text) {
+                fruit.state = .busy
+            } else {
+                fruit.state = .available
+            }
+
+            out.append(fruit)
+        }
+
+        return out
+    }
+
+    static func detect(in image: UIImage) async -> [FruitCandidate] {
+        let candidates = fruitCandidates(in: image)
+        return await classify(image: image, fruits: candidates)
+    }
+
+    static func fullCardRect(
+        imageWidth w: CGFloat,
+        imageHeight h: CGFloat,
         fruitCenter: CGPoint
-    ) -> CardState {
+    ) -> CGRect {
+        let columnWidth = w / 3
         let col = min(
             2,
             max(
                 0,
-                Int(fruitCenter.x / (Double(w) / 3))
+                Int(fruitCenter.x / columnWidth)
             )
         )
 
-        let x0 = max(0, Int(Double(col) * Double(w) / 3 + Double(w) * 0.02))
-        let x1 = min(w-1, Int(Double(col+1) * Double(w) / 3 - Double(w) * 0.02))
+        // Whole card lane, deliberately larger than Stage 2.0.
+        // This includes the time header / 完成 text above the fruit.
+        let x0 = CGFloat(col) * columnWidth + w * 0.015
+        let x1 = CGFloat(col + 1) * columnWidth - w * 0.015
 
-        let y0 = max(0, Int(fruitCenter.y - Double(h) * 0.11))
-        let y1 = min(h-1, Int(fruitCenter.y + Double(h) * 0.09))
+        let y0 = max(
+            0,
+            fruitCenter.y - h * 0.165
+        )
 
-        var strongGreen = 0
-        var paleMint = 0
-        var palePink = 0
-        var strongRed = 0
+        let y1 = min(
+            h,
+            fruitCenter.y + h * 0.105
+        )
 
-        for y in y0...y1 {
-            for x in x0...x1 {
-                let p = pixel(data, width: w, x: x, y: y)
-                let v = hsv(p)
+        return CGRect(
+            x: x0,
+            y: y0,
+            width: max(1, x1 - x0),
+            height: max(1, y1 - y0)
+        )
+    }
 
-                if v.h >= 130 && v.h <= 205 && v.s > 0.28 && v.v > 0.32 {
-                    strongGreen += 1
+    static func recognizeText(
+        image: CGImage,
+        pixelRect: CGRect
+    ) async -> String {
+        guard let crop = image.cropping(to: pixelRect.integral) else {
+            return ""
+        }
+
+        return await withCheckedContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, error in
+                guard error == nil else {
+                    continuation.resume(returning: "")
+                    return
                 }
 
-                if v.h >= 130 && v.h <= 205 && v.s >= 0.015 && v.s <= 0.30 && v.v > 0.70 {
-                    paleMint += 1
+                let observations = request.results as? [VNRecognizedTextObservation] ?? []
+
+                let lines = observations.compactMap {
+                    $0.topCandidates(1).first?.string
                 }
 
-                if (v.h <= 20 || v.h >= 335) &&
-                    v.s >= 0.01 && v.s <= 0.24 && v.v > 0.78 {
-                    palePink += 1
-                }
+                continuation.resume(
+                    returning: lines.joined(separator: " ")
+                )
+            }
 
-                if (v.h <= 20 || v.h >= 335) &&
-                    v.s > 0.45 && v.v > 0.42 {
-                    strongRed += 1
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            request.minimumTextHeight = 0.025
+
+            let supported = try? request.supportedRecognitionLanguages()
+
+            var preferred: [String] = []
+
+            if supported?.contains("zh-Hant") == true {
+                preferred.append("zh-Hant")
+            }
+
+            if supported?.contains("zh-Hans") == true {
+                preferred.append("zh-Hans")
+            }
+
+            if supported?.contains("en-US") == true {
+                preferred.append("en-US")
+            }
+
+            if !preferred.isEmpty {
+                request.recognitionLanguages = preferred
+            }
+
+            let handler = VNImageRequestHandler(
+                cgImage: crop,
+                orientation: .up,
+                options: [:]
+            )
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(returning: "")
+                }
+            }
+        }
+    }
+
+    static func normalized(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "O", with: "0")
+            .replacingOccurrences(of: "o", with: "0")
+    }
+
+    static func isCompleteText(_ text: String) -> Bool {
+        let t = normalized(text)
+
+        return t.contains("完成") ||
+               t.contains("領取") ||
+               t.contains("领取")
+    }
+
+    static func isBusyText(_ text: String) -> Bool {
+        let t = normalized(text)
+
+        // The user's UI uses strings such as:
+        // 176日..., 107日..., X小時, X分
+        let units = ["日", "天", "小時", "小时", "分", "秒"]
+
+        for unit in units {
+            if t.contains(unit) {
+                // Require at least one digit somewhere in the card text.
+                if t.range(of: #"\d"#, options: .regularExpression) != nil {
+                    return true
                 }
             }
         }
 
-        // Complete card has very characteristic green text/card chrome.
-        if strongGreen > 900 || paleMint > 6500 {
-            return .complete
+        // English fallback if UI language changes.
+        let lower = t.lowercased()
+
+        if lower.range(
+            of: #"\d+(day|days|hour|hours|min|mins|minute|minutes|sec|secs|second|seconds)"#,
+            options: .regularExpression
+        ) != nil {
+            return true
         }
 
-        // Busy card has pale pink rounded border plus usually red progress.
-        if palePink > 6000 || strongRed > 1400 {
-            return .busy
-        }
-
-        return .available
+        return false
     }
 
     static func annotated(
         image: UIImage,
         fruits: [FruitCandidate]
     ) -> UIImage {
+        guard let cg = image.cgImage else { return image }
+
+        let cgW = CGFloat(cg.width)
+        let cgH = CGFloat(cg.height)
+
         let renderer = UIGraphicsImageRenderer(size: image.size)
 
-        return renderer.image { ctx in
+        return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: image.size))
-
-            let cgW = CGFloat(image.cgImage?.width ?? Int(image.size.width))
-            let cgH = CGFloat(image.cgImage?.height ?? Int(image.size.height))
 
             let sx = image.size.width / cgW
             let sy = image.size.height / cgH
 
             for fruit in fruits {
-                let r = CGRect(
+                let fruitRect = CGRect(
                     x: fruit.rect.origin.x * sx,
                     y: fruit.rect.origin.y * sy,
                     width: fruit.rect.width * sx,
                     height: fruit.rect.height * sy
                 )
 
+                let cardPixel = fullCardRect(
+                    imageWidth: cgW,
+                    imageHeight: cgH,
+                    fruitCenter: fruit.center
+                )
+
+                let cardRect = CGRect(
+                    x: cardPixel.origin.x * sx,
+                    y: cardPixel.origin.y * sy,
+                    width: cardPixel.width * sx,
+                    height: cardPixel.height * sy
+                )
+
                 let color: UIColor
+
                 switch fruit.state {
-                case .available: color = .green
-                case .busy: color = .red
-                case .complete: color = .blue
+                case .available:
+                    color = .green
+                case .busy:
+                    color = .red
+                case .complete:
+                    color = .blue
                 }
 
                 color.setStroke()
 
-                let path = UIBezierPath(rect: r.insetBy(dx: -4, dy: -4))
-                path.lineWidth = 4
-                path.stroke()
+                let cardPath = UIBezierPath(rect: cardRect)
+                cardPath.lineWidth = 4
+                cardPath.stroke()
+
+                if fruit.state == .available {
+                    let fruitPath = UIBezierPath(
+                        rect: fruitRect.insetBy(dx: -3, dy: -3)
+                    )
+                    fruitPath.lineWidth = 3
+                    fruitPath.stroke()
+                }
             }
         }
     }
