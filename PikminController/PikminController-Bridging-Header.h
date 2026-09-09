@@ -1,0 +1,2 @@
+
+#import "XCTestCapabilityProbe.h"
