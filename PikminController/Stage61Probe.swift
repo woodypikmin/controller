@@ -29,7 +29,7 @@ final class Stage61Probe: ObservableObject {
         Task {
             let result =
                 XCTestCapabilityProbe
-                    .runProbe()
+                    .run()
 
             let dictionary =
                 result as NSDictionary

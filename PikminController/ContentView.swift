@@ -314,7 +314,7 @@ private let loopLimits:
                     }
                 }
                 .navigationTitle(
-                    "Controller 0.6.1.1"
+                    "Controller 0.6.1.2.2"
                 )
             }
 
