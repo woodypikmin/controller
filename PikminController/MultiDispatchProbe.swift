@@ -14,11 +14,6 @@ final class MultiDispatchProbe: ObservableObject {
     private var cancelled =
         false
 
-    // Pikmin Bloom keeps the color filter selected between dispatches.
-    // If we tap the pink filter again on dispatch #2, it can toggle it OFF.
-    private var pinkFilterActive =
-        false
-
     private let pinkGrid: [
         (Double, Double)
     ] = [
@@ -50,7 +45,6 @@ final class MultiDispatchProbe: ObservableObject {
 
     func runTwoDispatches() {
         cancelled = false
-        pinkFilterActive = false
 
         UserDefaults.standard.set(
             "",
@@ -401,9 +395,19 @@ final class MultiDispatchProbe: ObservableObject {
             0.9
         )
 
+        // ----------------------------------------------------
         // Pink filter
+        //
+        // IMPORTANT:
+        // EVERY dispatch must re-select the pink filter.
+        // User-confirmed sequence:
+        // enter selection page
+        // -> swipe filter row left
+        // -> tap pink circle
+        // -> select 12 pink Pikmin
+        // ----------------------------------------------------
         persist(
-            "DISPATCH \(dispatchIndex)/2: pink filter"
+            "DISPATCH \(dispatchIndex)/2: force swipe + pink filter"
         )
 
         let screen =
@@ -411,111 +415,128 @@ final class MultiDispatchProbe: ObservableObject {
             WDAClient.shared
             .windowSize()
 
-        // IMPORTANT:
-        // Pikmin Bloom preserves the selected color filter after dispatch.
-        // Once pink is selected, do NOT tap it again on the next dispatch,
-        // because that can toggle the filter off.
-        if !pinkFilterActive {
-            var pinkFound:
-                (
-                    point: CGPoint,
-                    image: UIImage
-                )?
+        // ALWAYS swipe once first on every round.
+        // Do not trust any previous filter state from round #1.
+        try await
+            WDAClient.shared
+            .swipe(
+                fromX:
+                    Double(
+                        screen.width
+                    )
+                    * 0.88,
+                fromY:
+                    Double(
+                        screen.height
+                    )
+                    * 0.432,
+                toX:
+                    Double(
+                        screen.width
+                    )
+                    * 0.43,
+                toY:
+                    Double(
+                        screen.height
+                    )
+                    * 0.432,
+                duration:
+                    0.38
+            )
 
-            for attempt in 0...4 {
-                let image =
-                    try await
-                    WDAClient.shared
-                    .screenshot()
+        try await sleep(
+            0.60
+        )
 
-                if let pink =
-                    ImageAutomationDetector
-                    .detectPinkFilter(
-                        in: image
-                    ) {
-                    pinkFound =
-                        (
-                            pink,
-                            image
-                        )
+        var pinkFound:
+            (
+                point: CGPoint,
+                image: UIImage
+            )?
 
-                    break
-                }
-
-                if attempt == 4 {
-                    break
-                }
-
+        // After the mandatory swipe, find the pink circle.
+        // If still hidden, keep swiping left and retry.
+        for attempt in 0...4 {
+            let image =
                 try await
-                    WDAClient.shared
-                    .swipe(
-                        fromX:
-                            Double(
-                                screen.width
-                            )
-                            * 0.86,
-                        fromY:
-                            Double(
-                                screen.height
-                            )
-                            * 0.432,
-                        toX:
-                            Double(
-                                screen.width
-                            )
-                            * 0.48,
-                        toY:
-                            Double(
-                                screen.height
-                            )
-                            * 0.432,
-                        duration:
-                            0.35
+                WDAClient.shared
+                .screenshot()
+
+            if let pink =
+                ImageAutomationDetector
+                .detectPinkFilter(
+                    in: image
+                ) {
+                pinkFound =
+                    (
+                        pink,
+                        image
                     )
 
-                try await sleep(
-                    0.55
-                )
+                break
             }
 
-            guard let pink =
-                pinkFound
-            else {
-                throw
-                    WDAError.server(
-                        "Dispatch \(dispatchIndex): pink filter not found."
-                    )
+            if attempt == 4 {
+                break
             }
 
             try await
-                normalizedTap(
-                    pixel:
-                        pink.point,
-                    image:
-                        pink.image
+                WDAClient.shared
+                .swipe(
+                    fromX:
+                        Double(
+                            screen.width
+                        )
+                        * 0.88,
+                    fromY:
+                        Double(
+                            screen.height
+                        )
+                        * 0.432,
+                    toX:
+                        Double(
+                            screen.width
+                        )
+                        * 0.43,
+                    toY:
+                        Double(
+                            screen.height
+                        )
+                        * 0.432,
+                    duration:
+                        0.38
                 )
 
-            pinkFilterActive =
-                true
-
-            persist(
-                "DISPATCH \(dispatchIndex)/2: pink filter selected"
-            )
-
             try await sleep(
-                0.65
+                0.58
             )
         }
+
+        guard let pink =
+            pinkFound
         else {
-            persist(
-                "DISPATCH \(dispatchIndex)/2: pink filter already active; skip re-tap"
+            throw
+                WDAError.server(
+                    "Dispatch \(dispatchIndex): after forced filter-row swipe, pink circle was not found."
+                )
+        }
+
+        persist(
+            "DISPATCH \(dispatchIndex)/2: tap pink circle"
+        )
+
+        try await
+            normalizedTap(
+                pixel:
+                    pink.point,
+                image:
+                    pink.image
             )
 
-            // Let the Pikmin grid finish settling after entering this page.
-            try await sleep(
-                0.55
-            )
-        }
+        // Wait for pink-only grid to refresh before fixed 12 taps.
+        try await sleep(
+            0.95
+        )
 
         // Select 12
         persist(

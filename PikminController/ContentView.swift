@@ -82,7 +82,7 @@ struct ContentView: View {
 
                     Text("""
                     會真的跑兩次：
-                    派遣 #1 → X → 回列表 → 重新辨識 → 派遣 #2 → X → 停止。
+                    每一輪都會重新：滑動篩選列 → 點粉色圈圈 → 選12隻。派遣 #1 → X → 回列表 → 派遣 #2 → X → 停止。
                     """)
                     .font(.caption)
                     .foregroundStyle(.red)

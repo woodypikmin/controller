@@ -103,8 +103,8 @@ final class ImageAutomationDetector {
             return nil
         }
 
-        let y0 = Int(Double(h) * 0.35)
-        let y1 = Int(Double(h) * 0.50)
+        let y0 = Int(Double(h) * 0.385)
+        let y1 = Int(Double(h) * 0.475)
 
         var mask = [Bool](
             repeating: false,
