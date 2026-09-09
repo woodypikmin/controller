@@ -27,15 +27,15 @@ struct ContentView: View {
                         .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("Stage 2.3 - Real Card Pairing") {
+                Section("Stage 2.4 - Partial Card Safety") {
                     Button("DETECT ONLY") {
                         probe.detectOnly()
                     }
                     .disabled(!sessionOK)
 
                     Text("""
-                    先判斷水果外面有沒有「狀態卡外框」。
-                    沒外框 = AVAILABLE；只有有外框才看上方時間/完成文字。
+                    完整卡照 BUSY / COMPLETE 判斷。
+                    卡片只露一半會變成 BLOCKED；普通物件必須 OCR 讀到水果名稱才可 AVAILABLE。
                     """)
                     .font(.caption)
 
@@ -51,9 +51,10 @@ struct ContentView: View {
                     }
 
                     Text("""
-                    GREEN = AVAILABLE（普通水果）
-                    RED = BUSY（完整淡粉狀態卡）
-                    BLUE = COMPLETE（完整淡綠完成卡）
+                    GREEN = AVAILABLE（有辨識到水果名稱）
+                    RED = BUSY（完整搬運卡）
+                    BLUE = COMPLETE（完整完成卡）
+                    PURPLE = BLOCKED（半張卡 / 不確定物件 / 絕對不點）
                     """)
                     .font(.caption)
 
@@ -76,7 +77,7 @@ struct ContentView: View {
                         .font(.system(.caption, design: .monospaced))
                 }
             }
-            .navigationTitle("Controller 0.2.3")
+            .navigationTitle("Controller 0.2.4")
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     loadResult()

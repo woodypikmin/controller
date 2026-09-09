@@ -17,7 +17,7 @@ final class BotProbe: ObservableObject {
             in: .userDomainMask
         )[0]
         .appendingPathComponent(
-            "stage2_3_detection.png"
+            "stage2_4_detection.png"
         )
     }
 
@@ -54,7 +54,7 @@ final class BotProbe: ObservableObject {
             UIApplication.shared
             .beginBackgroundTask(
                 withName:
-                    "PikminStage2_3"
+                    "PikminStage2_4"
             ) {
                 [weak self] in
 
@@ -131,14 +131,25 @@ final class BotProbe: ObservableObject {
                             .complete
                     }
 
+                let partialCards =
+                    result.cards
+                    .filter {
+                        $0.partial
+                    }
+
                 let available =
                     result.fruits
 
+                let blockedObjects =
+                    result.blockedObjects
+
                 var text = """
-                FRAME-PAIR DETECTION OK
+                PARTIAL-CARD + FRUIT-NAME DETECTION OK
                 available=\(available.count)
                 busy_cards=\(busyCards.count)
                 complete_cards=\(completeCards.count)
+                partial_blocked_cards=\(partialCards.count)
+                blocked_objects=\(blockedObjects.count)
 
                 """
 
@@ -152,6 +163,19 @@ final class BotProbe: ObservableObject {
                     AVAILABLE #\(index + 1)
                     label: \(fruit.labelText)
                     fill: \(String(format: "%.2f", fruit.fill))
+
+                    """
+                }
+
+                for (
+                    index,
+                    object
+                ) in
+                    blockedObjects
+                    .enumerated() {
+                    text += """
+                    BLOCKED OBJECT #\(index + 1)
+                    OCR label: \(object.labelText)
 
                     """
                 }
