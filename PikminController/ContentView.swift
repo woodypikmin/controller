@@ -165,7 +165,7 @@ struct ContentView: View {
                 }
             }
             .navigationTitle(
-                "Controller 0.3.0"
+                "Controller 0.3.1"
             )
             .onChange(
                 of: scenePhase

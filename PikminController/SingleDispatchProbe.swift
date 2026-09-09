@@ -389,7 +389,7 @@ final class SingleDispatchProbe: ObservableObject {
 
         guard let close =
             try await waitForPoint(
-                attempts: 38,
+                attempts: 50,
                 delay: 0.40,
                 detector:
                     ImageAutomationDetector
@@ -398,7 +398,7 @@ final class SingleDispatchProbe: ObservableObject {
         else {
             throw
                 WDAError.server(
-                    "Carrying-screen green X was not detected."
+                    "Carrying-screen green X was not detected. Stage 3.1 uses the fixed lower-left green-circle detector."
                 )
         }
 
