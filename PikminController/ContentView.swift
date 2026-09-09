@@ -27,7 +27,7 @@ struct ContentView: View {
                         .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("Stage 2.2 - Frame First") {
+                Section("Stage 2.3 - Real Card Pairing") {
                     Button("DETECT ONLY") {
                         probe.detectOnly()
                     }
@@ -51,10 +51,9 @@ struct ContentView: View {
                     }
 
                     Text("""
-                    GREEN = AVAILABLE（沒有狀態外框）
-                    RED = BUSY（有框 + 上方搬運時間）
-                    BLUE = COMPLETE（有框 + 完成/領取）
-                    PURPLE = BLOCKED（不確定，但絕對不點）
+                    GREEN = AVAILABLE（普通水果）
+                    RED = BUSY（完整淡粉狀態卡）
+                    BLUE = COMPLETE（完整淡綠完成卡）
                     """)
                     .font(.caption)
 
@@ -77,7 +76,7 @@ struct ContentView: View {
                         .font(.system(.caption, design: .monospaced))
                 }
             }
-            .navigationTitle("Controller 0.2.2")
+            .navigationTitle("Controller 0.2.3")
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     loadResult()
