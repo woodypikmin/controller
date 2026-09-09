@@ -7,6 +7,14 @@ final class ContinuousLoopProbe: ObservableObject {
 
     @Published var status = "Not started"
     @Published var isRunning = false
+    @Published var completedDispatches = 0
+
+    // Stage 5.1 visual handoff cover.
+    // Before Controller is foregrounded, capture Pikmin and show that exact
+    // screenshot over Controller. The user should see a frozen Pikmin frame
+    // instead of the Controller UI.
+    @Published var handoffImage: UIImage?
+    @Published var isHandoffCoverVisible = false
 
     private var bgTask:
         UIBackgroundTaskIdentifier =
@@ -15,8 +23,11 @@ final class ContinuousLoopProbe: ObservableObject {
     private var cancelled =
         false
 
-    private var completedDispatches =
-        0
+    private var dispatchLimit:
+        Int?
+
+    private var useHandoffCover =
+        true
 
     private let pinkGrid: [
         (Double, Double)
@@ -43,11 +54,14 @@ final class ContinuousLoopProbe: ObservableObject {
             in: .userDomainMask
         )[0]
         .appendingPathComponent(
-            "stage5_final.png"
+            "stage5_1_final.png"
         )
     }
 
-    func startLoop() {
+    func startLoop(
+        maxDispatches: Int?,
+        hideControllerFlash: Bool
+    ) {
         guard !isRunning else {
             return
         }
@@ -56,15 +70,31 @@ final class ContinuousLoopProbe: ObservableObject {
         isRunning = true
         completedDispatches = 0
 
+        dispatchLimit =
+            maxDispatches
+
+        useHandoffCover =
+            hideControllerFlash
+
+        handoffImage = nil
+        isHandoffCoverVisible = false
+
         UserDefaults.standard.set(
             "",
             forKey:
                 "stage5Status"
         )
 
-        persist(
-            "START LOOP"
-        )
+        if let maxDispatches {
+            persist(
+                "START LOOP | target=\(maxDispatches)"
+            )
+        }
+        else {
+            persist(
+                "START LOOP | target=unlimited"
+            )
+        }
 
         startFreshBackgroundTask(
             label:
@@ -87,6 +117,26 @@ final class ContinuousLoopProbe: ObservableObject {
                 )
 
                 while !cancelled {
+                    // User-selected finite loop target.
+                    if let limit =
+                        dispatchLimit,
+                       completedDispatches >=
+                        limit {
+                        try? await
+                            saveFinalScreenshot()
+
+                        persist(
+                            """
+                            FINISHED
+                            Target reached.
+                            completed=\(completedDispatches)
+                            """
+                        )
+
+                        finishRun()
+                        return
+                    }
+
                     let round =
                         completedDispatches + 1
 
@@ -101,21 +151,8 @@ final class ContinuousLoopProbe: ObservableObject {
                                 round
                         )
                     else {
-                        let final =
-                            try? await
-                            WDAClient.shared
-                            .screenshot()
-
-                        if let final,
-                           let png =
-                            final.pngData() {
-                            try? png.write(
-                                to:
-                                    Self.finalScreenshotURL,
-                                options:
-                                    .atomic
-                            )
-                        }
+                        try? await
+                            saveFinalScreenshot()
 
                         persist(
                             """
@@ -125,8 +162,7 @@ final class ContinuousLoopProbe: ObservableObject {
                             """
                         )
 
-                        isRunning = false
-                        finishBackgroundTask()
+                        finishRun()
                         return
                     }
 
@@ -143,11 +179,32 @@ final class ContinuousLoopProbe: ObservableObject {
                     completedDispatches += 1
 
                     persist(
-                        "ROUND \(round) COMPLETED. total=\(completedDispatches)"
+                        "ROUND \(round) COMPLETED | total=\(completedDispatches)"
                     )
 
                     if cancelled {
                         break
+                    }
+
+                    // If finite target is already reached, do NOT perform one
+                    // unnecessary Controller foreground refresh.
+                    if let limit =
+                        dispatchLimit,
+                       completedDispatches >=
+                        limit {
+                        try? await
+                            saveFinalScreenshot()
+
+                        persist(
+                            """
+                            FINISHED
+                            Target reached.
+                            completed=\(completedDispatches)
+                            """
+                        )
+
+                        finishRun()
+                        return
                     }
 
                     persist(
@@ -164,17 +221,18 @@ final class ContinuousLoopProbe: ObservableObject {
                     }
 
                     try await sleep(
-                        0.35
+                        0.30
                     )
 
                     if cancelled {
                         break
                     }
 
-                    // Refresh Controller foreground very briefly,
-                    // renew background execution, then go back to Pikmin.
+                    // Renew iOS background execution.
+                    // Stage 5.1 hides the Controller UI using the last Pikmin
+                    // screenshot and immediately returns to Pikmin.
                     persist(
-                        "Refreshing Controller background window..."
+                        "Refreshing background window..."
                     )
 
                     try await
@@ -185,29 +243,32 @@ final class ContinuousLoopProbe: ObservableObject {
                     )
 
                     try await sleep(
-                        0.65
+                        0.48
                     )
 
-                    // GET-only WDA health check before next loop.
                     try await
                         WDAClient.shared
                         .prepareForNextDispatch()
                 }
 
+                try? await
+                    saveFinalScreenshot()
+
                 persist(
-                    "STOPPED BY USER. completed=\(completedDispatches)"
+                    "STOPPED BY USER | completed=\(completedDispatches)"
                 )
 
-                isRunning = false
-                finishBackgroundTask()
+                finishRun()
             }
             catch {
+                try? await
+                    saveFinalScreenshot()
+
                 persist(
                     "FAILED after \(completedDispatches) completed: \(error.localizedDescription)"
                 )
 
-                isRunning = false
-                finishBackgroundTask()
+                finishRun()
             }
         }
     }
@@ -275,7 +336,6 @@ final class ContinuousLoopProbe: ObservableObject {
                 )
             }
 
-            // Search down first.
             if swipes >= 8 {
                 if !reversed {
                     reversed = true
@@ -317,7 +377,7 @@ final class ContinuousLoopProbe: ObservableObject {
                             * 0.35,
                         duration:
                             0.42
-                )
+                    )
             }
             else {
                 try await
@@ -674,7 +734,7 @@ final class ContinuousLoopProbe: ObservableObject {
         )
 
         try await sleep(
-            0.70
+            0.68
         )
     }
 
@@ -716,7 +776,7 @@ final class ContinuousLoopProbe: ObservableObject {
     }
 
     // --------------------------------------------------------
-    // FOREGROUND REFRESH
+    // NEAR-INVISIBLE FOREGROUND REFRESH
     // --------------------------------------------------------
 
     private func foregroundRefresh()
@@ -731,6 +791,24 @@ final class ContinuousLoopProbe: ObservableObject {
                 )
         }
 
+        // Capture current Pikmin list BEFORE switching to Controller.
+        // When Controller becomes visible, this image covers its entire UI.
+        if useHandoffCover {
+            if let freeze =
+                try? await
+                WDAClient.shared
+                .screenshot() {
+                handoffImage =
+                    freeze
+
+                isHandoffCoverVisible =
+                    true
+
+                // Allow SwiftUI to commit the cover while still backgrounded.
+                await Task.yield()
+            }
+        }
+
         do {
             try await
                 WDAClient.shared
@@ -740,14 +818,14 @@ final class ContinuousLoopProbe: ObservableObject {
                 )
         }
         catch {
-            // Foreground transition can interrupt response.
+            // App activation can interrupt the HTTP response.
         }
 
         var active =
             false
 
-        // Check quickly; don't leave Controller visible for long.
-        for _ in 0..<12 {
+        // Faster than Stage 5.0: check every 20 ms.
+        for _ in 0..<30 {
             if UIApplication.shared
                 .applicationState ==
                 .active {
@@ -757,28 +835,33 @@ final class ContinuousLoopProbe: ObservableObject {
             }
 
             try await sleep(
-                0.05
+                0.02
             )
         }
 
         guard active else {
+            isHandoffCoverVisible =
+                false
+
+            handoffImage =
+                nil
+
             throw
                 WDAError.server(
                     "Controller could not return foreground automatically."
                 )
         }
 
-        // Fresh background window while Controller is active.
+        // The moment Controller becomes active, renew the finite background
+        // window and immediately send Pikmin back to foreground.
         startFreshBackgroundTask(
             label:
                 "round-\(completedDispatches + 1)"
         )
 
-        // User asked for as little visible flash as possible.
-        // Keep Controller foreground only ~0.20-0.25 sec.
-        try await sleep(
-            0.20
-        )
+        // NO intentional 0.20-second Controller dwell anymore.
+        // One scheduler yield is enough for beginBackgroundTask to register.
+        await Task.yield()
 
         do {
             try await
@@ -786,11 +869,31 @@ final class ContinuousLoopProbe: ObservableObject {
                 .launchPikmin()
         }
         catch {
-            // App switch may interrupt final HTTP response.
+            // App switch may interrupt final response.
         }
 
+        // Wait until Controller is no longer active, then remove cover.
+        for _ in 0..<30 {
+            if UIApplication.shared
+                .applicationState !=
+                .active {
+                break
+            }
+
+            try await sleep(
+                0.02
+            )
+        }
+
+        isHandoffCoverVisible =
+            false
+
+        handoffImage =
+            nil
+
+        // Short Pikmin settle delay.
         try await sleep(
-            0.55
+            0.42
         )
     }
 
@@ -911,6 +1014,24 @@ final class ContinuousLoopProbe: ObservableObject {
         return nil
     }
 
+    private func saveFinalScreenshot()
+        async throws {
+        let final =
+            try await
+            WDAClient.shared
+            .screenshot()
+
+        if let png =
+            final.pngData() {
+            try png.write(
+                to:
+                    Self.finalScreenshotURL,
+                options:
+                    .atomic
+            )
+        }
+    }
+
     private func sleep(
         _ seconds: Double
     ) async throws {
@@ -936,6 +1057,19 @@ final class ContinuousLoopProbe: ObservableObject {
             forKey:
                 "stage5Status"
         )
+    }
+
+    private func finishRun() {
+        isRunning =
+            false
+
+        isHandoffCoverVisible =
+            false
+
+        handoffImage =
+            nil
+
+        finishBackgroundTask()
     }
 
     private func finishBackgroundTask() {

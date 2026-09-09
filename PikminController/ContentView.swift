@@ -23,128 +23,187 @@ struct ContentView: View {
     @State private var finalImage:
         UIImage?
 
+    // 0 = unlimited
+    @State private var selectedLimit =
+        0
+
+    @State private var hideControllerFlash =
+        true
+
+    private let loopLimits:
+        [
+            (
+                label: String,
+                value: Int
+            )
+        ] = [
+            ("無限", 0),
+            ("5 次", 5),
+            ("10 次", 10),
+            ("20 次", 20),
+            ("50 次", 50)
+        ]
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Setup") {
-                    Button(
-                        "1. Check WDA"
-                    ) {
-                        Task {
-                            await checkWDA()
+        ZStack {
+            NavigationStack {
+                Form {
+                    Section("Setup") {
+                        Button(
+                            "1. Check WDA"
+                        ) {
+                            Task {
+                                await checkWDA()
+                            }
                         }
-                    }
 
-                    Button(
-                        "2. Create GENERIC Session"
-                    ) {
-                        Task {
-                            await createSession()
+                        Button(
+                            "2. Create GENERIC Session"
+                        ) {
+                            Task {
+                                await createSession()
+                            }
                         }
-                    }
-                    .disabled(!wdaOK)
+                        .disabled(!wdaOK)
 
-                    Text(
-                        sessionOK
-                        ? "SESSION READY"
-                        : "NO SESSION"
-                    )
-                    .foregroundStyle(
-                        sessionOK
-                        ? .green
-                        : .secondary
-                    )
-                }
-
-                Section("Safety") {
-                    Button(
-                        "DETECT ONLY"
-                    ) {
-                        detectProbe
-                            .detectOnly()
-                    }
-                    .disabled(!sessionOK)
-                }
-
-                Section("Stage 5 - Continuous Loop") {
-                    Button(
-                        "START LOOP"
-                    ) {
-                        loopProbe
-                            .startLoop()
-                    }
-                    .disabled(
-                        !sessionOK ||
-                        loopProbe.isRunning
-                    )
-
-                    Button(
-                        "STOP"
-                    ) {
-                        loopProbe
-                            .stopLoop()
-                    }
-                    .foregroundStyle(.red)
-                    .disabled(
-                        !loopProbe.isRunning
-                    )
-
-                    Text("""
-                    會持續派遣。
-                    每輪完成後 Controller 只會短暫閃一下，再自動回 Pikmin。
-                    沒有安全的 AVAILABLE 時自動停止。
-                    """)
-                    .font(.caption)
-
-                    Text(
-                        savedStage5Status()
-                    )
-                    .font(
-                        .system(
-                            .caption,
-                            design:
-                                .monospaced
+                        Text(
+                            sessionOK
+                            ? "SESSION READY"
+                            : "NO SESSION"
                         )
-                    )
-                    .textSelection(
-                        .enabled
-                    )
-                }
-
-                Section("Result") {
-                    Button(
-                        "Refresh Result"
-                    ) {
-                        loadResults()
-                    }
-
-                    if let finalImage {
-                        Image(
-                            uiImage:
-                                finalImage
-                        )
-                        .resizable()
-                        .scaledToFit()
-                        .frame(
-                            maxHeight:
-                                380
+                        .foregroundStyle(
+                            sessionOK
+                            ? .green
+                            : .secondary
                         )
                     }
-                }
 
-                Section("Current") {
-                    Text(
-                        loopProbe.status
-                    )
-                    .font(
-                        .system(
-                            .caption,
-                            design:
-                                .monospaced
+                    Section("Loop Controls") {
+                        Picker(
+                            "派遣次數",
+                            selection:
+                                $selectedLimit
+                        ) {
+                            ForEach(
+                                loopLimits,
+                                id:
+                                    \.value
+                            ) {
+                                option in
+
+                                Text(
+                                    option.label
+                                )
+                                .tag(
+                                    option.value
+                                )
+                            }
+                        }
+
+                        Toggle(
+                            "隱藏 Controller 切換",
+                            isOn:
+                                $hideControllerFlash
                         )
-                    )
 
-                    Text(log)
+                        Text(
+                            hideControllerFlash
+                            ? "每輪續命時用 Pikmin 截圖蓋住 Controller，並在取得背景時間後立刻切回。"
+                            : "除錯模式：每輪可能會短暫看到 Controller。"
+                        )
+                        .font(.caption)
+                    }
+
+                    Section("Stage 5.1 - Continuous Loop") {
+                        Button(
+                            "START LOOP"
+                        ) {
+                            let limit:
+                                Int? =
+                                selectedLimit == 0
+                                ? nil
+                                : selectedLimit
+
+                            loopProbe
+                                .startLoop(
+                                    maxDispatches:
+                                        limit,
+                                    hideControllerFlash:
+                                        hideControllerFlash
+                                )
+                        }
+                        .disabled(
+                            !sessionOK ||
+                            loopProbe.isRunning
+                        )
+
+                        Button(
+                            "STOP"
+                        ) {
+                            loopProbe
+                                .stopLoop()
+                        }
+                        .foregroundStyle(.red)
+                        .disabled(
+                            !loopProbe.isRunning
+                        )
+
+                        HStack {
+                            Text(
+                                "已完成"
+                            )
+
+                            Spacer()
+
+                            Text(
+                                "\(loopProbe.completedDispatches)"
+                            )
+                            .font(
+                                .system(
+                                    .body,
+                                    design:
+                                        .monospaced
+                                )
+                            )
+                            .bold()
+                        }
+
+                        HStack {
+                            Text(
+                                "目標"
+                            )
+
+                            Spacer()
+
+                            Text(
+                                selectedLimit == 0
+                                ? "無限"
+                                : "\(selectedLimit)"
+                            )
+                        }
+
+                        HStack {
+                            Text(
+                                "狀態"
+                            )
+
+                            Spacer()
+
+                            Text(
+                                loopProbe.isRunning
+                                ? "RUNNING"
+                                : "STOPPED"
+                            )
+                            .foregroundStyle(
+                                loopProbe.isRunning
+                                ? .green
+                                : .secondary
+                            )
+                        }
+
+                        Text(
+                            savedStage5Status()
+                        )
                         .font(
                             .system(
                                 .caption,
@@ -152,21 +211,109 @@ struct ContentView: View {
                                     .monospaced
                             )
                         )
-                }
-            }
-            .navigationTitle(
-                "Controller 0.5.0"
-            )
-            .onChange(
-                of: scenePhase
-            ) {
-                _,
-                phase in
+                        .textSelection(
+                            .enabled
+                        )
+                    }
 
-                if phase ==
-                    .active {
-                    loadResults()
+                    Section("Safety / Debug") {
+                        Button(
+                            "DETECT ONLY"
+                        ) {
+                            detectProbe
+                                .detectOnly()
+                        }
+                        .disabled(
+                            !sessionOK ||
+                            loopProbe.isRunning
+                        )
+
+                        Button(
+                            "Refresh Result"
+                        ) {
+                            loadResults()
+                        }
+
+                        if let finalImage {
+                            Image(
+                                uiImage:
+                                    finalImage
+                            )
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                maxHeight:
+                                    360
+                            )
+                        }
+                    }
+
+                    Section("Connection") {
+                        Text(log)
+                            .font(
+                                .system(
+                                    .caption,
+                                    design:
+                                        .monospaced
+                                )
+                            )
+                    }
                 }
+                .navigationTitle(
+                    "Controller 0.5.1"
+                )
+            }
+
+            // Full-screen visual handoff cover.
+            // It is already prepared while Controller is still backgrounded,
+            // so when iOS foregrounds Controller the user sees the last Pikmin
+            // frame instead of this Form.
+            if loopProbe
+                .isHandoffCoverVisible,
+               let image =
+                loopProbe
+                .handoffImage {
+                GeometryReader {
+                    proxy in
+
+                    Image(
+                        uiImage:
+                            image
+                    )
+                    .resizable()
+                    .scaledToFill()
+                    .frame(
+                        width:
+                            proxy.size.width,
+                        height:
+                            proxy.size.height
+                    )
+                    .clipped()
+                    .ignoresSafeArea()
+                }
+                .background(
+                    Color.black
+                        .ignoresSafeArea()
+                )
+                .allowsHitTesting(
+                    false
+                )
+                .zIndex(999)
+            }
+        }
+        .statusBarHidden(
+            loopProbe
+                .isHandoffCoverVisible
+        )
+        .onChange(
+            of: scenePhase
+        ) {
+            _,
+            phase in
+
+            if phase ==
+                .active {
+                loadResults()
             }
         }
     }
