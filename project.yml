@@ -20,5 +20,4 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.PikminController
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
-    scheme:
-      testTargets: []
+        SWIFT_OBJC_BRIDGING_HEADER: PikminController/PikminController-Bridging-Header.h
