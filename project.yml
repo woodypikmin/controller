@@ -1,12 +1,15 @@
 
 name: PikminController
+
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
     iOS: "18.0"
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
+
 targets:
   PikminController:
     type: application
@@ -21,3 +24,34 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         SWIFT_OBJC_BRIDGING_HEADER: PikminController/PikminController-Bridging-Header.h
+
+  PikminRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - PikminRunnerUITests
+    dependencies:
+      - target: PikminController
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.PikminRunnerUITests
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PikminController
+
+schemes:
+  PikminController:
+    build:
+      targets:
+        PikminController: all
+
+  PikminRunner:
+    build:
+      targets:
+        PikminController: all
+        PikminRunnerUITests: [test]
+    test:
+      config: Release
+      targets:
+        - PikminRunnerUITests
