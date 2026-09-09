@@ -10,14 +10,10 @@ enum WDAError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse:
-            return "Invalid response from WDA."
-        case .server(let text):
-            return text
-        case .noSession:
-            return "No WDA session."
-        case .invalidScreenshot:
-            return "Could not decode screenshot."
+        case .invalidResponse: return "Invalid response from WDA."
+        case .server(let s): return s
+        case .noSession: return "Create CONTROLLER session first."
+        case .invalidScreenshot: return "Could not decode screenshot."
         }
     }
 }
@@ -32,7 +28,7 @@ actor WDAClient {
         path: String,
         method: String = "GET",
         json: [String: Any]? = nil,
-        timeout: TimeInterval = 8
+        timeout: TimeInterval = 15
     ) async throws -> [String: Any] {
         let url = base.appendingPathComponent(path)
         var req = URLRequest(url: url)
@@ -59,32 +55,28 @@ actor WDAClient {
         guard let dict = obj as? [String: Any] else {
             throw WDAError.invalidResponse
         }
-
         return dict
     }
 
-    func status() async throws -> [String: Any] {
-        try await request(path: "status", timeout: 8)
+    func status() async throws -> String {
+        let d = try await request(path: "status", timeout: 8)
+        return String(describing: d)
     }
 
-    private func extractSessionId(_ dict: [String: Any]) -> String? {
-        if let sid = dict["sessionId"] as? String, !sid.isEmpty {
-            return sid
-        }
-
-        if let value = dict["value"] as? [String: Any],
-           let sid = value["sessionId"] as? String,
-           !sid.isEmpty {
-            return sid
-        }
-
+    private func extractSessionId(_ d: [String: Any]) -> String? {
+        if let sid = d["sessionId"] as? String, !sid.isEmpty { return sid }
+        if let v = d["value"] as? [String: Any],
+           let sid = v["sessionId"] as? String,
+           !sid.isEmpty { return sid }
         return nil
     }
 
-    func createSession(bundleId: String) async throws -> String {
-        // Keep JSONWP desiredCapabilities because raw WDA supports it directly.
-        // Also send an empty W3C capabilities object for newer builds.
-        let payload: [String: Any] = [
+    func createControllerSession() async throws -> String {
+        guard let bundleId = Bundle.main.bundleIdentifier else {
+            throw WDAError.server("Controller bundle id unavailable.")
+        }
+
+        let body: [String: Any] = [
             "desiredCapabilities": [
                 "bundleId": bundleId,
                 "arguments": [],
@@ -92,70 +84,68 @@ actor WDAClient {
                 "shouldWaitForQuiescence": false,
                 "shouldUseSingletonTestManager": true
             ],
-            "capabilities": [:]
+            "capabilities": [
+                "alwaysMatch": [
+                    "bundleId": bundleId,
+                    "shouldWaitForQuiescence": false
+                ],
+                "firstMatch": [[:]]
+            ]
         ]
 
-        let dict = try await request(
+        let d = try await request(
             path: "session",
             method: "POST",
-            json: payload,
+            json: body,
             timeout: 60
         )
 
-        guard let sid = extractSessionId(dict) else {
-            let data = try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])
-            let text = String(data: data, encoding: .utf8) ?? "\(dict)"
-            throw WDAError.server("No sessionId in response:\n\(text)")
+        guard let sid = extractSessionId(d) else {
+            throw WDAError.server("WDA returned no sessionId: \(d)")
         }
 
         sessionId = sid
         return sid
     }
 
-    func createControllerSession() async throws -> String {
-        guard let id = Bundle.main.bundleIdentifier else {
-            throw WDAError.server("Controller bundle identifier is unavailable.")
-        }
-        return try await createSession(bundleId: id)
+    func launchPikmin() async throws {
+        guard let sid = sessionId else { throw WDAError.noSession }
+
+        let body: [String: Any] = [
+            "bundleId": "com.nianticlabs.pikmin",
+            "arguments": [],
+            "environment": [:],
+            "shouldWaitForQuiescence": false
+        ]
+
+        _ = try await request(
+            path: "session/\(sid)/wda/apps/launch",
+            method: "POST",
+            json: body,
+            timeout: 30
+        )
     }
 
-    func createPikminSession() async throws -> String {
-        try await createSession(bundleId: "com.nianticlabs.pikmin")
+    func pikminState() async throws -> String {
+        guard let sid = sessionId else { throw WDAError.noSession }
+
+        let d = try await request(
+            path: "session/\(sid)/wda/apps/state",
+            method: "POST",
+            json: ["bundleId": "com.nianticlabs.pikmin"],
+            timeout: 10
+        )
+
+        return String(describing: d)
     }
 
     func screenshot() async throws -> UIImage {
-        let dict = try await request(path: "screenshot", timeout: 15)
-
-        guard let value = dict["value"] as? String,
-              let data = Data(base64Encoded: value),
+        let d = try await request(path: "screenshot", timeout: 15)
+        guard let b64 = d["value"] as? String,
+              let data = Data(base64Encoded: b64),
               let image = UIImage(data: data) else {
             throw WDAError.invalidScreenshot
         }
-
         return image
-    }
-
-    func tap(x: Double, y: Double) async throws {
-        guard let sid = sessionId else {
-            throw WDAError.noSession
-        }
-
-        let body: [String: Any] = ["x": x, "y": y]
-
-        do {
-            _ = try await request(
-                path: "session/\(sid)/wda/tap",
-                method: "POST",
-                json: body,
-                timeout: 15
-            )
-        } catch {
-            _ = try await request(
-                path: "session/\(sid)/wda/tap/0",
-                method: "POST",
-                json: body,
-                timeout: 15
-            )
-        }
     }
 }

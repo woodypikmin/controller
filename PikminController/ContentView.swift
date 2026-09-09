@@ -14,32 +14,41 @@ struct ContentView: View {
                     Button("Check WDA") {
                         Task { await checkWDA() }
                     }
-
-                    Text(wdaOK ? "WDA: READY" : "WDA: NOT CHECKED")
+                    Text(wdaOK ? "READY" : "NOT READY")
                         .foregroundStyle(wdaOK ? .green : .secondary)
                 }
 
-                Section("2. Session diagnostics") {
+                Section("2. Create session") {
                     Button("Create CONTROLLER Session") {
-                        Task { await createControllerSession() }
+                        Task { await controllerSession() }
                     }
                     .disabled(!wdaOK)
 
-                    Text("先按這個。它不會切去 Pikmin，用來確認 WDA session 本身正常。")
-                        .font(.caption)
-
-                    Button("Create PIKMIN Session (wait up to 60s)") {
-                        Task { await createPikminSession() }
-                    }
-                    .disabled(!wdaOK)
-
-                    Text("這個可能會把 Pikmin Bloom 拉到前景。")
-                        .font(.caption)
+                    Text(sessionOK ? "SESSION READY" : "NO SESSION")
+                        .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("3. Screenshot") {
-                    Button("Get Screenshot") {
-                        Task { await getScreenshot() }
+                Section("3. Pikmin launch test") {
+                    Button("CHECK Pikmin State") {
+                        Task { await state() }
+                    }
+                    .disabled(!sessionOK)
+
+                    Button("LAUNCH PIKMIN THROUGH WDA") {
+                        Task { await launch() }
+                    }
+                    .disabled(!sessionOK)
+
+                    Text("""
+                    按 LAUNCH 後如果 Controller 被切到背景、Pikmin 跳到前景，
+                    就算 Controller 沒收到最後 HTTP response，也算這一步成功。
+                    """)
+                    .font(.caption)
+                }
+
+                Section("Screenshot") {
+                    Button("Get WDA Screenshot") {
+                        Task { await shot() }
                     }
                     .disabled(!wdaOK)
 
@@ -47,7 +56,7 @@ struct ContentView: View {
                         Image(uiImage: screenshot)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxHeight: 320)
+                            .frame(maxHeight: 300)
                     }
                 }
 
@@ -57,16 +66,15 @@ struct ContentView: View {
                         .textSelection(.enabled)
                 }
             }
-            .navigationTitle("Pikmin Controller 0.1.1")
+            .navigationTitle("Controller 0.1.2")
         }
     }
 
     @MainActor
     private func checkWDA() async {
         do {
-            let result = try await WDAClient.shared.status()
+            log = try await WDAClient.shared.status()
             wdaOK = true
-            log = "WDA OK\n\(result)"
         } catch {
             wdaOK = false
             log = "WDA FAILED\n\(error.localizedDescription)"
@@ -74,9 +82,8 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func createControllerSession() async {
-        log = "Creating CONTROLLER session...\nWait up to 60 seconds."
-
+    private func controllerSession() async {
+        log = "Creating Controller session..."
         do {
             let sid = try await WDAClient.shared.createControllerSession()
             sessionOK = true
@@ -88,21 +95,27 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func createPikminSession() async {
-        log = "Creating PIKMIN session...\nWait up to 60 seconds.\nIf Pikmin opens, that is important."
-
+    private func state() async {
         do {
-            let sid = try await WDAClient.shared.createPikminSession()
-            sessionOK = true
-            log = "PIKMIN SESSION OK\n\(sid)"
+            log = "PIKMIN STATE\n" + (try await WDAClient.shared.pikminState())
         } catch {
-            sessionOK = false
-            log = "PIKMIN SESSION FAILED\n\(error.localizedDescription)"
+            log = "STATE FAILED\n\(error.localizedDescription)"
         }
     }
 
     @MainActor
-    private func getScreenshot() async {
+    private func launch() async {
+        log = "Sending WDA launch command for Pikmin..."
+        do {
+            try await WDAClient.shared.launchPikmin()
+            log = "WDA says Pikmin launch command succeeded."
+        } catch {
+            log = "LAUNCH request ended with:\n\(error.localizedDescription)\n\nIf Pikmin opened anyway, report that as SUCCESS."
+        }
+    }
+
+    @MainActor
+    private func shot() async {
         do {
             screenshot = try await WDAClient.shared.screenshot()
             log = "SCREENSHOT OK"
