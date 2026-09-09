@@ -2,6 +2,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var log = "Ready."
     @State private var wdaOK = false
     @State private var sessionOK = false
@@ -14,34 +16,43 @@ struct ContentView: View {
                     Button("Check WDA") {
                         Task { await checkWDA() }
                     }
-                    Text(wdaOK ? "READY" : "NOT READY")
+
+                    Text(wdaOK ? "WDA READY" : "WDA NOT CHECKED")
                         .foregroundStyle(wdaOK ? .green : .secondary)
                 }
 
-                Section("2. Create session") {
-                    Button("Create CONTROLLER Session") {
-                        Task { await controllerSession() }
+                Section("2. Generic session") {
+                    Button("Create GENERIC WDA Session") {
+                        Task { await createGenericSession() }
                     }
                     .disabled(!wdaOK)
+
+                    Text("""
+                    這次不指定任何 bundleId，
+                    所以 WDA 不會把 Controller 自己重開。
+                    """)
+                    .font(.caption)
 
                     Text(sessionOK ? "SESSION READY" : "NO SESSION")
                         .foregroundStyle(sessionOK ? .green : .secondary)
                 }
 
-                Section("3. Pikmin launch test") {
-                    Button("CHECK Pikmin State") {
-                        Task { await state() }
+                Section("3. Verify session") {
+                    Button("Get Active App Info") {
+                        Task { await activeInfo() }
                     }
                     .disabled(!sessionOK)
+                }
 
-                    Button("LAUNCH PIKMIN THROUGH WDA") {
-                        Task { await launch() }
+                Section("4. Launch Pikmin") {
+                    Button("LAUNCH PIKMIN") {
+                        Task { await launchPikmin() }
                     }
                     .disabled(!sessionOK)
 
                     Text("""
-                    按 LAUNCH 後如果 Controller 被切到背景、Pikmin 跳到前景，
-                    就算 Controller 沒收到最後 HTTP response，也算這一步成功。
+                    如果按下後 Pikmin Bloom 跳到前景，
+                    就算 Controller 被切到背景也算這一步成功。
                     """)
                     .font(.caption)
                 }
@@ -56,8 +67,17 @@ struct ContentView: View {
                         Image(uiImage: screenshot)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxHeight: 300)
+                            .frame(maxHeight: 280)
                     }
+                }
+
+                Section("Persisted diagnostics") {
+                    Button("Refresh Saved Result") {
+                        refreshPersisted()
+                    }
+
+                    Text(savedDiagnosticText())
+                        .font(.system(.caption, design: .monospaced))
                 }
 
                 Section("Log") {
@@ -66,7 +86,15 @@ struct ContentView: View {
                         .textSelection(.enabled)
                 }
             }
-            .navigationTitle("Controller 0.1.2")
+            .navigationTitle("Controller 0.1.3")
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    if WDAClientSync.restorePossible {
+                        sessionOK = true
+                    }
+                    refreshPersisted()
+                }
+            }
         }
     }
 
@@ -82,35 +110,42 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func controllerSession() async {
-        log = "Creating Controller session..."
+    private func createGenericSession() async {
+        log = "Creating GENERIC session..."
+
         do {
-            let sid = try await WDAClient.shared.createControllerSession()
+            let id = try await WDAClient.shared.createGenericSession()
             sessionOK = true
-            log = "CONTROLLER SESSION OK\n\(sid)"
+            log = "GENERIC SESSION OK\n\(id)"
         } catch {
             sessionOK = false
-            log = "CONTROLLER SESSION FAILED\n\(error.localizedDescription)"
+            log = "GENERIC SESSION FAILED\n\(error.localizedDescription)"
         }
     }
 
     @MainActor
-    private func state() async {
+    private func activeInfo() async {
         do {
-            log = "PIKMIN STATE\n" + (try await WDAClient.shared.pikminState())
+            log = "ACTIVE APP\n" + (try await WDAClient.shared.activeAppInfo())
         } catch {
-            log = "STATE FAILED\n\(error.localizedDescription)"
+            log = "ACTIVE APP FAILED\n\(error.localizedDescription)"
         }
     }
 
     @MainActor
-    private func launch() async {
-        log = "Sending WDA launch command for Pikmin..."
+    private func launchPikmin() async {
+        log = "Launch command sent. Watch what the PHONE does."
+
         do {
             try await WDAClient.shared.launchPikmin()
-            log = "WDA says Pikmin launch command succeeded."
+            log = "WDA returned HTTP success for Pikmin launch."
         } catch {
-            log = "LAUNCH request ended with:\n\(error.localizedDescription)\n\nIf Pikmin opened anyway, report that as SUCCESS."
+            log = """
+            Launch request ended with:
+            \(error.localizedDescription)
+
+            If Pikmin opened anyway, the launch itself succeeded.
+            """
         }
     }
 
@@ -122,5 +157,39 @@ struct ContentView: View {
         } catch {
             log = "SCREENSHOT FAILED\n\(error.localizedDescription)"
         }
+    }
+
+    private func refreshPersisted() {
+        if UserDefaults.standard.string(forKey: "lastWDASessionId") != nil {
+            sessionOK = true
+        }
+    }
+
+    private func savedDiagnosticText() -> String {
+        let defaults = UserDefaults.standard
+        let sid = defaults.string(forKey: "lastWDASessionId") ?? "(none)"
+        let sent = defaults.double(forKey: "pikminLaunchSentAt")
+        let got200 = defaults.bool(forKey: "pikminLaunchGotHTTP200")
+
+        var parts = [
+            "saved session: \(sid)",
+            "launch HTTP 200: \(got200)"
+        ]
+
+        if sent > 0 {
+            parts.append("launch request timestamp: \(sent)")
+        } else {
+            parts.append("launch request: not sent")
+        }
+
+        return parts.joined(separator: "\n")
+    }
+}
+
+// Tiny synchronous helper only for restoring UI state.
+enum WDAClientSync {
+    static var restorePossible: Bool {
+        let value = UserDefaults.standard.string(forKey: "lastWDASessionId")
+        return !(value ?? "").isEmpty
     }
 }

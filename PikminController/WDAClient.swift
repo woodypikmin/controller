@@ -12,7 +12,7 @@ enum WDAError: LocalizedError {
         switch self {
         case .invalidResponse: return "Invalid response from WDA."
         case .server(let s): return s
-        case .noSession: return "Create CONTROLLER session first."
+        case .noSession: return "Create GENERIC session first."
         case .invalidScreenshot: return "Could not decode screenshot."
         }
     }
@@ -51,101 +51,126 @@ actor WDAClient {
             throw WDAError.server(text)
         }
 
-        let obj = try JSONSerialization.jsonObject(with: data)
-        guard let dict = obj as? [String: Any] else {
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let dict = object as? [String: Any] else {
             throw WDAError.invalidResponse
         }
+
         return dict
     }
 
-    func status() async throws -> String {
-        let d = try await request(path: "status", timeout: 8)
-        return String(describing: d)
-    }
+    private func sessionId(from response: [String: Any]) -> String? {
+        if let id = response["sessionId"] as? String, !id.isEmpty {
+            return id
+        }
 
-    private func extractSessionId(_ d: [String: Any]) -> String? {
-        if let sid = d["sessionId"] as? String, !sid.isEmpty { return sid }
-        if let v = d["value"] as? [String: Any],
-           let sid = v["sessionId"] as? String,
-           !sid.isEmpty { return sid }
+        if let value = response["value"] as? [String: Any] {
+            if let id = value["sessionId"] as? String, !id.isEmpty {
+                return id
+            }
+        }
+
         return nil
     }
 
-    func createControllerSession() async throws -> String {
-        guard let bundleId = Bundle.main.bundleIdentifier else {
-            throw WDAError.server("Controller bundle id unavailable.")
-        }
+    func status() async throws -> String {
+        let value = try await request(path: "status", timeout: 8)
+        return String(describing: value)
+    }
 
+    func createGenericSession() async throws -> String {
+        // This mirrors SideTap's current session creation:
+        // POST /session {"capabilities":{"alwaysMatch":{}}}
+        //
+        // No bundleId = do NOT relaunch Pikmin Controller.
         let body: [String: Any] = [
-            "desiredCapabilities": [
-                "bundleId": bundleId,
-                "arguments": [],
-                "environment": [:],
-                "shouldWaitForQuiescence": false,
-                "shouldUseSingletonTestManager": true
-            ],
             "capabilities": [
-                "alwaysMatch": [
-                    "bundleId": bundleId,
-                    "shouldWaitForQuiescence": false
-                ],
-                "firstMatch": [[:]]
+                "alwaysMatch": [:]
             ]
         ]
 
-        let d = try await request(
+        let response = try await request(
             path: "session",
-            method: "POST",
-            json: body,
-            timeout: 60
-        )
-
-        guard let sid = extractSessionId(d) else {
-            throw WDAError.server("WDA returned no sessionId: \(d)")
-        }
-
-        sessionId = sid
-        return sid
-    }
-
-    func launchPikmin() async throws {
-        guard let sid = sessionId else { throw WDAError.noSession }
-
-        let body: [String: Any] = [
-            "bundleId": "com.nianticlabs.pikmin",
-            "arguments": [],
-            "environment": [:],
-            "shouldWaitForQuiescence": false
-        ]
-
-        _ = try await request(
-            path: "session/\(sid)/wda/apps/launch",
             method: "POST",
             json: body,
             timeout: 30
         )
+
+        guard let id = sessionId(from: response) else {
+            throw WDAError.server("No sessionId returned: \(response)")
+        }
+
+        sessionId = id
+        UserDefaults.standard.set(id, forKey: "lastWDASessionId")
+        return id
     }
 
-    func pikminState() async throws -> String {
-        guard let sid = sessionId else { throw WDAError.noSession }
+    func restoreSavedSession() -> String? {
+        if let current = sessionId {
+            return current
+        }
 
-        let d = try await request(
-            path: "session/\(sid)/wda/apps/state",
-            method: "POST",
-            json: ["bundleId": "com.nianticlabs.pikmin"],
+        if let saved = UserDefaults.standard.string(forKey: "lastWDASessionId"),
+           !saved.isEmpty {
+            sessionId = saved
+            return saved
+        }
+
+        return nil
+    }
+
+    func activeAppInfo() async throws -> String {
+        guard let id = sessionId ?? restoreSavedSession() else {
+            throw WDAError.noSession
+        }
+
+        let response = try await request(
+            path: "session/\(id)/wda/activeAppInfo",
             timeout: 10
         )
 
-        return String(describing: d)
+        return String(describing: response)
+    }
+
+    func launchPikmin() async throws {
+        guard let id = sessionId ?? restoreSavedSession() else {
+            throw WDAError.noSession
+        }
+
+        // Write this BEFORE sending the launch request. If iOS backgrounds
+        // Controller immediately, we can still tell the request was sent.
+        UserDefaults.standard.set(
+            Date().timeIntervalSince1970,
+            forKey: "pikminLaunchSentAt"
+        )
+
+        _ = try await request(
+            path: "session/\(id)/wda/apps/launch",
+            method: "POST",
+            json: [
+                "bundleId": "com.nianticlabs.pikmin"
+            ],
+            timeout: 20
+        )
+
+        UserDefaults.standard.set(
+            true,
+            forKey: "pikminLaunchGotHTTP200"
+        )
     }
 
     func screenshot() async throws -> UIImage {
-        let d = try await request(path: "screenshot", timeout: 15)
-        guard let b64 = d["value"] as? String,
+        let response = try await request(
+            path: "screenshot",
+            timeout: 15
+        )
+
+        guard let b64 = response["value"] as? String,
               let data = Data(base64Encoded: b64),
               let image = UIImage(data: data) else {
             throw WDAError.invalidScreenshot
         }
+
         return image
     }
 }
