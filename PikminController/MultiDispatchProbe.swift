@@ -158,6 +158,18 @@ final class MultiDispatchProbe: ObservableObject {
                         try await sleep(
                             0.7
                         )
+
+                        persist(
+                            "WDA health check before dispatch 2..."
+                        )
+
+                        try await
+                            WDAClient.shared
+                            .prepareForNextDispatch()
+
+                        persist(
+                            "WDA health check OK; starting dispatch 2"
+                        )
                     }
                 }
 
@@ -229,10 +241,18 @@ final class MultiDispatchProbe: ObservableObject {
         fruit: FruitCandidate,
         image: UIImage
     )? {
+        persist(
+            "DISPATCH \(dispatchIndex)/2: getting screen size"
+        )
+
         let screen =
             try await
             WDAClient.shared
             .windowSize()
+
+        persist(
+            "DISPATCH \(dispatchIndex)/2: screen size ready \(Int(screen.width))x\(Int(screen.height))"
+        )
 
         var directionDown =
             true
