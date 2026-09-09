@@ -2,16 +2,14 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.scenePhase)
+    private var scenePhase
 
     @StateObject private var detectProbe =
         BotProbe.shared
 
-    @StateObject private var singleProbe =
-        SingleDispatchProbe.shared
-
-    @StateObject private var multiProbe =
-        MultiDispatchProbe.shared
+    @StateObject private var loopProbe =
+        ContinuousLoopProbe.shared
 
     @State private var log =
         "Ready."
@@ -21,9 +19,6 @@ struct ContentView: View {
 
     @State private var sessionOK =
         false
-
-    @State private var detectionImage:
-        UIImage?
 
     @State private var finalImage:
         UIImage?
@@ -71,31 +66,38 @@ struct ContentView: View {
                     .disabled(!sessionOK)
                 }
 
-                Section("Stage 4.4 - Two Dispatch Test") {
+                Section("Stage 5 - Continuous Loop") {
                     Button(
-                        "RUN TWO DISPATCHES"
+                        "START LOOP"
                     ) {
-                        multiProbe
-                            .runTwoDispatches()
+                        loopProbe
+                            .startLoop()
                     }
-                    .disabled(!sessionOK)
-
-                    Text("""
-                    會真的跑兩次：
-                    第一輪完成後，Controller 會自動短暫回到前景取得新的背景時間，再自動切回 Pikmin 跑第二輪。你不需要手動切 App。
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .disabled(
+                        !sessionOK ||
+                        loopProbe.isRunning
+                    )
 
                     Button(
                         "STOP"
                     ) {
-                        multiProbe.cancel()
+                        loopProbe
+                            .stopLoop()
                     }
                     .foregroundStyle(.red)
+                    .disabled(
+                        !loopProbe.isRunning
+                    )
+
+                    Text("""
+                    會持續派遣。
+                    每輪完成後 Controller 只會短暫閃一下，再自動回 Pikmin。
+                    沒有安全的 AVAILABLE 時自動停止。
+                    """)
+                    .font(.caption)
 
                     Text(
-                        savedStage4Status()
+                        savedStage5Status()
                     )
                     .font(
                         .system(
@@ -132,7 +134,7 @@ struct ContentView: View {
 
                 Section("Current") {
                     Text(
-                        multiProbe.status
+                        loopProbe.status
                     )
                     .font(
                         .system(
@@ -153,7 +155,7 @@ struct ContentView: View {
                 }
             }
             .navigationTitle(
-                "Controller 0.4.4"
+                "Controller 0.5.0"
             )
             .onChange(
                 of: scenePhase
@@ -214,12 +216,12 @@ struct ContentView: View {
         }
     }
 
-    private func savedStage4Status()
+    private func savedStage5Status()
         -> String {
         UserDefaults.standard
             .string(
                 forKey:
-                    "stage4Status"
+                    "stage5Status"
             )
         ?? "(none)"
     }
@@ -229,12 +231,13 @@ struct ContentView: View {
             try?
             Data(
                 contentsOf:
-                    MultiDispatchProbe
+                    ContinuousLoopProbe
                     .finalScreenshotURL
             ),
            let image =
             UIImage(
-                data: data
+                data:
+                    data
             ) {
             finalImage =
                 image
