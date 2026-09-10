@@ -1,5 +1,5 @@
 
-name: Build Pikmin Pilot Stage 7.0.1
+name: Build Pikmin Pilot Stage 7.0.2
 
 on:
   workflow_dispatch:
@@ -21,6 +21,8 @@ jobs:
 
       - name: Build unsigned app
         run: |
+          set -euxo pipefail
+
           xcodebuild \
             -project PikminPilot.xcodeproj \
             -scheme PikminPilot \
@@ -33,34 +35,78 @@ jobs:
 
       - name: Package unsigned IPA
         run: |
+          set -euxo pipefail
+
           rm -rf Payload
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
-          zip -qry PikminPilot-Stage7.0.1-unsigned.ipa Payload
+
+          cp -R \
+            build/Build/Products/Release-iphoneos/PikminPilot.app \
+            Payload/
+
+          /usr/bin/zip \
+            -qry \
+            PikminPilot-Stage7.0.2-unsigned.ipa \
+            Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage7.0.1-unsigned
-          path: PikminPilot-Stage7.0.1-unsigned.ipa
+          name: PikminPilot-Stage7.0.2-unsigned
+          path: PikminPilot-Stage7.0.2-unsigned.ipa
 
   build-idevice:
     runs-on: macos-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust iOS target
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+          targets: aarch64-apple-ios
 
-      - name: Build idevice XCFramework
+      - name: Build idevice iOS XCFramework
+        shell: bash
         run: |
-          chmod +x ./scripts/build-idevice-xcframework.sh
-          bash ./scripts/build-idevice-xcframework.sh
+          set -euxo pipefail
+
+          rm -rf .build/idevice Vendor/IDevice
+          mkdir -p .build Vendor/IDevice/include
+
+          git clone \
+            --depth 1 \
+            https://github.com/jkcoxson/idevice.git \
+            .build/idevice
+
+          cd .build/idevice
+
+          echo "idevice revision:"
+          git rev-parse HEAD
+
+          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphoneos --show-sdk-path)"
+          export IPHONEOS_DEPLOYMENT_TARGET=17.4
+
+          cargo build \
+            --release \
+            --target aarch64-apple-ios \
+            -p idevice-ffi \
+            --features obfuscate
+
+          cd ../..
+
+          cp \
+            .build/idevice/ffi/idevice.h \
+            Vendor/IDevice/include/idevice.h
+
+          xcodebuild -create-xcframework \
+            -library .build/idevice/target/aarch64-apple-ios/release/libidevice_ffi.a \
+            -headers Vendor/IDevice/include \
+            -output Vendor/IDevice/IDevice.xcframework
+
+          test -d Vendor/IDevice/IDevice.xcframework
+          find Vendor/IDevice/IDevice.xcframework -maxdepth 3 -print
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IDevice-xcframework
+          name: IDevice-xcframework-Stage7.0.2
           path: Vendor/IDevice/IDevice.xcframework
