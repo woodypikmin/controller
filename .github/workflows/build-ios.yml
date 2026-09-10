@@ -1,5 +1,5 @@
 
-name: Build Pikmin Pilot Stage 7.0.2
+name: Build Pikmin Pilot Stage 7.1
 
 on:
   workflow_dispatch:
@@ -7,19 +7,27 @@ on:
     branches: [ main ]
 
 jobs:
-  build-app:
+  build:
     runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify vendored IDevice XCFramework
+        run: |
+          set -euxo pipefail
+          test -f Vendor/IDevice/IDevice.xcframework/Info.plist
+          test -f Vendor/IDevice/IDevice.xcframework/ios-arm64/libidevice_ffi.a
+          test -f Vendor/IDevice/IDevice.xcframework/ios-arm64/Headers/idevice.h
+          ls -lh Vendor/IDevice/IDevice.xcframework/ios-arm64/libidevice_ffi.a
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode project
+      - name: Generate project
         run: xcodegen generate
 
-      - name: Build unsigned app
+      - name: Build unsigned iPhone app
         run: |
           set -euxo pipefail
 
@@ -28,85 +36,26 @@ jobs:
             -scheme PikminPilot \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Package unsigned IPA
+      - name: Package IPA
         run: |
           set -euxo pipefail
 
           rm -rf Payload
           mkdir Payload
-
-          cp -R \
-            build/Build/Products/Release-iphoneos/PikminPilot.app \
-            Payload/
+          cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
 
           /usr/bin/zip \
             -qry \
-            PikminPilot-Stage7.0.2-unsigned.ipa \
+            PikminPilot-Stage7.1-unsigned.ipa \
             Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage7.0.2-unsigned
-          path: PikminPilot-Stage7.0.2-unsigned.ipa
-
-  build-idevice:
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust iOS target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios
-
-      - name: Build idevice iOS XCFramework
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          rm -rf .build/idevice Vendor/IDevice
-          mkdir -p .build Vendor/IDevice/include
-
-          git clone \
-            --depth 1 \
-            https://github.com/jkcoxson/idevice.git \
-            .build/idevice
-
-          cd .build/idevice
-
-          echo "idevice revision:"
-          git rev-parse HEAD
-
-          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphoneos --show-sdk-path)"
-          export IPHONEOS_DEPLOYMENT_TARGET=17.4
-
-          cargo build \
-            --release \
-            --target aarch64-apple-ios \
-            -p idevice-ffi \
-            --features obfuscate
-
-          cd ../..
-
-          cp \
-            .build/idevice/ffi/idevice.h \
-            Vendor/IDevice/include/idevice.h
-
-          xcodebuild -create-xcframework \
-            -library .build/idevice/target/aarch64-apple-ios/release/libidevice_ffi.a \
-            -headers Vendor/IDevice/include \
-            -output Vendor/IDevice/IDevice.xcframework
-
-          test -d Vendor/IDevice/IDevice.xcframework
-          find Vendor/IDevice/IDevice.xcframework -maxdepth 3 -print
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: IDevice-xcframework-Stage7.0.2
-          path: Vendor/IDevice/IDevice.xcframework
+          name: PikminPilot-Stage7.1-unsigned
+          path: PikminPilot-Stage7.1-unsigned.ipa
