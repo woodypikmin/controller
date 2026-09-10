@@ -1,11 +1,13 @@
 
-name: Build Controller + XCUITest Runner
+name: Build Pikmin Pilot Stage 7.0
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
-  build:
+  build-app:
     runs-on: macos-latest
 
     steps:
@@ -14,81 +16,49 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate project
+      - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build Controller
+      - name: Build unsigned app
         run: |
           xcodebuild \
-            -project PikminController.xcodeproj \
-            -scheme PikminController \
+            -project PikminPilot.xcodeproj \
+            -scheme PikminPilot \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build-controller \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Build XCUITest Runner
-        run: |
-          xcodebuild \
-            -project PikminController.xcodeproj \
-            -scheme PikminRunner \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build-runner \
-            build-for-testing \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
-
-          echo "Runner products:"
-          find build-runner/Build/Products/Release-iphoneos -maxdepth 2 -print
-
-      - name: Package Controller IPA
+      - name: Package unsigned IPA
         run: |
           rm -rf Payload
-          mkdir -p Payload
-
-          cp -R \
-            build-controller/Build/Products/Release-iphoneos/PikminController.app \
-            Payload/
-
-          /usr/bin/zip \
-            -qry \
-            PikminController-unsigned.ipa \
-            Payload
-
-      - name: Package XCUITest Runner IPA
-        run: |
-          rm -rf Payload
-          mkdir -p Payload
-
-          RUNNER_APP="$(find build-runner/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*-Runner.app' | head -n 1)"
-
-          if [ -z "$RUNNER_APP" ]; then
-            echo "ERROR: XCUITest Runner.app not found"
-            find build-runner/Build/Products/Release-iphoneos -maxdepth 3 -print
-            exit 1
-          fi
-
-          echo "Packaging runner: $RUNNER_APP"
-
-          cp -R \
-            "$RUNNER_APP" \
-            Payload/
-
-          /usr/bin/zip \
-            -qry \
-            PikminRunner-unsigned.ipa \
-            Payload
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
+          zip -qry PikminPilot-Stage7.0-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminController-unsigned-ipa
-          path: PikminController-unsigned.ipa
+          name: PikminPilot-Stage7.0-unsigned
+          path: PikminPilot-Stage7.0-unsigned.ipa
+
+  build-idevice:
+    runs-on: macos-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Build idevice XCFramework
+        run: ./scripts/build-idevice-xcframework.sh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminRunner-unsigned-ipa
-          path: PikminRunner-unsigned.ipa
+          name: IDevice-xcframework
+          path: Vendor/IDevice/IDevice.xcframework
