@@ -1,38 +1,37 @@
 #!/bin/bash
 set -euxo pipefail
 
+# Reference recipe for the iPhone-only Stage 7.1.3 build.
 PIN="${IDEVICE_PIN:-c65dfbf}"
-ROOT="$(pwd)"
+ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
+OUT="$ROOT/Vendor/IDevice/IDevice.xcframework"
+HEADERS="$ROOT/Vendor/IDevice/include"
 
-rm -rf "$CACHE"
-mkdir -p "$ROOT/.build"
+rm -rf "$CACHE" "$OUT" "$HEADERS"
+mkdir -p "$ROOT/.build" "$HEADERS"
 
 git clone https://github.com/jkcoxson/idevice.git "$CACHE"
 cd "$CACHE"
 git checkout "$PIN"
+rustup target add aarch64-apple-ios
 
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-
-# Upstream's supported Apple build recipe.
-BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphoneos --show-sdk-path)" \
+SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$SDK" \
 IPHONEOS_DEPLOYMENT_TARGET=17.4 \
-cargo build --release --target aarch64-apple-ios --features obfuscate
+cargo build \
+  -p idevice-ffi \
+  --release \
+  --locked \
+  --target aarch64-apple-ios \
+  --no-default-features \
+  --features "obfuscate,ring,core_device,tunnel_tcp_stack"
 
-BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-IPHONEOS_DEPLOYMENT_TARGET=17.4 \
-cargo build --release --target aarch64-apple-ios-sim
-
-mkdir -p "$ROOT/Vendor/IDevice/include"
-cp ffi/idevice.h "$ROOT/Vendor/IDevice/include/idevice.h"
-
-rm -rf "$ROOT/Vendor/IDevice/IDevice.xcframework"
+LIB="target/aarch64-apple-ios/release/libidevice_ffi.a"
+test -f "$LIB"
+cp ffi/idevice.h "$HEADERS/idevice.h"
 
 xcodebuild -create-xcframework \
-  -library target/aarch64-apple-ios/release/libidevice_ffi.a \
-  -headers "$ROOT/Vendor/IDevice/include" \
-  -library target/aarch64-apple-ios-sim/release/libidevice_ffi.a \
-  -headers "$ROOT/Vendor/IDevice/include" \
-  -output "$ROOT/Vendor/IDevice/IDevice.xcframework"
-
-echo "Built Vendor/IDevice/IDevice.xcframework"
+  -library "$LIB" \
+  -headers "$HEADERS" \
+  -output "$OUT"
