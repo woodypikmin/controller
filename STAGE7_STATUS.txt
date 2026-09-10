@@ -1,0 +1,23 @@
+Pikmin Pilot Stage 7.0.2
+
+PRODUCT GOAL
+------------
+One iPhone app.
+Normal runtime does not require Windows, CMD, SideTap, or localhost WDA.
+
+DONE / CARRIED FORWARD
+----------------------
+- Fruit recognition: Stage 5 code included
+- Pink filter: Stage 5 code included
+- 12 Pikmin selection: Stage 5 code included
+- GO / close X / continuous loop: Stage 5 code included
+- Pairing-record import UI: added
+- Embedded transport boundary: added
+- idevice XCFramework build pipeline: added
+
+NEXT GATE
+---------
+Bind idevice FFI to EmbeddedDeviceTransport:
+pair record -> local RPPairing tunnel -> RSD -> control/screenshot.
+
+Stage 7.0.2 deliberately reports NOT READY rather than falling back to a PC.
