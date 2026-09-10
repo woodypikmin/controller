@@ -23,15 +23,6 @@ BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphonesimulator --show-sdk-pat
 IPHONEOS_DEPLOYMENT_TARGET=17.4 \
 cargo build --release --target aarch64-apple-ios-sim
 
-# Remove embedded LLVM bitcode; modern Xcode/iOS does not require it.
-for LIB in \
-  target/aarch64-apple-ios/release/libidevice_ffi.a \
-  target/aarch64-apple-ios-sim/release/libidevice_ffi.a
-do
-  xcrun bitcode_strip "$LIB" -r -o "$LIB.stripped"
-  mv "$LIB.stripped" "$LIB"
-done
-
 mkdir -p "$ROOT/Vendor/IDevice/include"
 cp ffi/idevice.h "$ROOT/Vendor/IDevice/include/idevice.h"
 
