@@ -25,7 +25,7 @@ cargo build \
   --locked \
   --target aarch64-apple-ios \
   --no-default-features \
-  --features "obfuscate,core_device,tunnel_tcp_stack"
+  --features "obfuscate,ring,core_device,tunnel_tcp_stack"
 
 LIB="target/aarch64-apple-ios/release/libidevice_ffi.a"
 
