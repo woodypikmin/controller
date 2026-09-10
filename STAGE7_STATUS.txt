@@ -1,23 +1,24 @@
-Pikmin Pilot Stage 7.0.2
+Pikmin Pilot Stage 7.1
 
-PRODUCT GOAL
-------------
-One iPhone app.
-Normal runtime does not require Windows, CMD, SideTap, or localhost WDA.
-
-DONE / CARRIED FORWARD
+REAL PHONE-LOCAL CALLS
 ----------------------
-- Fruit recognition: Stage 5 code included
-- Pink filter: Stage 5 code included
-- 12 Pikmin selection: Stage 5 code included
-- GO / close X / continuous loop: Stage 5 code included
-- Pairing-record import UI: added
-- Embedded transport boundary: added
-- idevice XCFramework build pipeline: added
+rp_pairing_file_read
+tunnel_create_rppairing
+RSD handshake
+AppService
+launch com.nianticlabs.pikmin
 
-NEXT GATE
----------
-Bind idevice FFI to EmbeddedDeviceTransport:
-pair record -> local RPPairing tunnel -> RSD -> control/screenshot.
+TARGET
+------
+10.7.0.1:49152
 
-Stage 7.0.2 deliberately reports NOT READY rather than falling back to a PC.
+SUCCESS GATES
+-------------
+1. IDEVICE LINKED • RPPairing OK
+2. PHONE-LOCAL RSD ONLINE
+3. Pikmin launches with Windows disconnected
+
+NO WDA FALLBACK
+---------------
+Stage 7.1 contains no runtime dependency on localhost:8100 or the Windows
+XCTest runner.

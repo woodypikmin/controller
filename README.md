@@ -1,90 +1,88 @@
-# Pikmin Pilot — Stage 7.0.2.2
+# Pikmin Pilot — Stage 7.1
 
-這是從 PC/WDA 架構切換到 **iPhone 本機 embedded device transport** 的第一版專案。
+This build vendors the exact `IDevice.xcframework` produced by Stage 7.0.2.
 
-## 這版已包含
+## What is real in 7.1
 
-- Stage 5 已完成的水果辨識來源碼
-- Stage 5 的單次派遣 / Continuous Loop 來源碼
-- `PilotTransport` transport boundary
-- Remote Pairing Record 匯入與保存
-- 明確禁止 Stage 7 靜默 fallback 到 `127.0.0.1:8100`
-- GitHub Actions unsigned IPA build
-- GitHub Actions / script 建 `jkcoxson/idevice` XCFramework
+The app now calls the idevice FFI directly:
 
-## 這版尚未假裝完成的部分
+1. `rp_pairing_file_read`
+2. `rp_pairing_file_to_bytes`
+3. `tunnel_create_rppairing`
+4. `rsd_get_uuid`
+5. `app_service_connect_rsd`
+6. `app_service_launch_app("com.nianticlabs.pikmin")`
 
-`EmbeddedDeviceTransport.connect()` 現在會明確回：
+There is no `127.0.0.1:8100` WDA fallback and no Windows Runner path.
 
-    Stage 7 Embedded Device Engine 尚未連接完成
+## Device test order
 
-這是故意的，不是假成功。
+### A. Import a real RPPairing record
 
-下一個 gate（Stage 7.1）是把 `IDevice.xcframework` 真正接到：
+In Pikmin Pilot:
 
-    pairing record
-    → RPPairing / local tunnel
-    → RSD
-    → CoreDevice / XCTest or HID
+`匯入 RPPairing Record`
 
-再把 Stage 5 Bot 的 screenshot/tap/swipe 改走這個 transport。
+Then:
 
-## 為什麼這條路和成品直接相關
+`VALIDATE WITH IDEVICE`
 
-`idevice` 是設計給「嵌入 App / server」使用的 Rust library，支援 RSD、CoreDevice、XCTest/WDA bootstrap。
-現有 iOS 專案也已經使用同一類架構在手機端處理 pairing、tunnel、display、HID。
+Expected:
 
-Stage 7 的成品目標：
+`IDEVICE LINKED • RPPairing OK • ... bytes`
 
-    安裝 Pikmin Pilot
-    → 首次匯入 pairing record
-    → 之後手機直接 RUN
-    → 平常不用 Windows / CMD
+This proves the Rust static library is linked and the imported record is in the
+RPPairing format expected by idevice.
 
-### iOS 26.x 的現實
+### B. Enable loopback VPN
 
-iOS 26.x 目前仍需要先有一份 Remote Pairing Record。
-這可以做成一次性的首次設定，而不是每次執行都接電腦。
+For the current on-device RPPairing recipe, the test target is:
 
-## Build
+`10.7.0.1:49152`
 
-1. 上傳整個專案到 GitHub。
-2. Actions → `Build Pikmin Pilot Stage 7.0.2.2`
-3. 下載：
-   - `PikminPilot-Stage7.0-unsigned`
-   - `IDevice-xcframework`（Stage 7.1 用）
+This is the LocalDevVPN-style device endpoint used by existing on-device
+idevice integrations.
 
-## Stage 7.0.2.2 測試
+Then press:
 
-這一版只要確認：
+`CONNECT PHONE-LOCAL RSD`
 
-1. IPA 能安裝 / 開啟。
-2. `匯入 Pairing Record` 可以選 plist。
-3. 匯入後顯示 byte size。
-4. `TEST PHONE-LOCAL ENGINE` 會明確顯示 embedded engine 尚未接線，而不是偷連 WDA。
+Expected:
 
-這個 gate 確認後，後續不再回 Windows Runner 架構。
+`PHONE-LOCAL RSD ONLINE • UUID ...`
+
+### C. Launch Pikmin without Windows
+
+Press:
+
+`PHONE-LOCAL → LAUNCH PIKMIN`
+
+Expected:
+
+Pikmin Bloom comes to the foreground.
+
+If this succeeds, the next stage replaces the remaining Stage 5 WDA
+`screenshot/tap/swipe` primitives with the phone-local RSD/CoreDevice
+equivalents and restores RUN / 5 / 10 / 20 / 50 / infinite loop controls.
+
+## Final-product note
+
+Stage 7.1 still assumes a valid RPPairing record and a loopback VPN transport
+exist on the phone. These are setup/transport components, not Windows runtime
+dependencies. The final packaging work will try to fold as much of this setup
+into Pikmin Pilot as iOS signing/Network Extension entitlements allow.
 
 
-## Stage 7.0.2.2 fix
+## Stage 7.1 GitHub-ready package note
 
-GitHub Actions now invokes the idevice build script through `bash` and also
-sets its executable bit first. This avoids `Permission denied` when repository
-uploads do not preserve Unix executable permissions.
+This package intentionally does **not** commit the large `IDevice.xcframework` binary.
+GitHub Actions builds the pinned idevice revision on the macOS runner, strips embedded LLVM bitcode, creates the iPhone arm64 XCFramework, and then builds Pikmin Pilot.
 
+This keeps every repository file small enough for browser upload while preserving the Stage 7.1 FFI integration.
 
-## Stage 7.0.2 build fix
+The first device gate is deliberately small:
+validate the pairing file, then attempt the phone-local RPPairing/RSD path,
+then use CoreDevice AppService to launch Pikmin.
 
-The GitHub Actions workflow no longer executes
-`scripts/build-idevice-xcframework.sh` at all.
-
-The `build-idevice` job now performs these steps inline:
-
-1. clone `jkcoxson/idevice`
-2. build `idevice-ffi` for `aarch64-apple-ios`
-3. copy `ffi/idevice.h`
-4. create `IDevice.xcframework`
-5. upload the XCFramework artifact
-
-Therefore ZIP/Git executable-bit preservation is irrelevant and this build
-cannot fail with `./scripts/...: Permission denied`.
+Screenshot/tap/swipe are NOT claimed complete in Stage 7.1; those move next
+after RSD/AppService is proven on-device.
