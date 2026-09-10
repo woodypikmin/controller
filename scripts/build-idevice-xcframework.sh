@@ -28,12 +28,12 @@ cargo build \
   --features "obfuscate,ring,core_device,tunnel_tcp_stack"
 
 LIB="target/aarch64-apple-ios/release/libidevice_ffi.a"
+test -f "$LIB"
+ls -lh "$LIB"
 
-# Rust/Apple static archives may contain very large embedded LLVM bitcode.
-# Modern Xcode/iOS no longer requires it, so strip it before packaging.
-xcrun bitcode_strip "$LIB" -r -o "$LIB.stripped"
-mv "$LIB.stripped" "$LIB"
-
+# Do NOT run bitcode_strip here. Modern Xcode's bitcode_strip fails on this
+# Rust static archive. Upstream idevice also feeds the generated .a directly
+# to xcodebuild -create-xcframework.
 cp ffi/idevice.h "$HEADERS/idevice.h"
 
 xcodebuild -create-xcframework \
@@ -41,5 +41,8 @@ xcodebuild -create-xcframework \
   -headers "$HEADERS" \
   -output "$OUT"
 
+test -f "$OUT/Info.plist"
+test -f "$OUT/ios-arm64/libidevice_ffi.a"
+test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
 echo "Built $OUT"
