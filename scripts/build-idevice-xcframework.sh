@@ -19,7 +19,13 @@ rustup target add aarch64-apple-ios
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$SDK" \
 IPHONEOS_DEPLOYMENT_TARGET=17.4 \
-cargo build --release --target aarch64-apple-ios --features obfuscate
+cargo build \
+  -p idevice-ffi \
+  --release \
+  --locked \
+  --target aarch64-apple-ios \
+  --no-default-features \
+  --features "obfuscate,core_device,tunnel_tcp_stack"
 
 LIB="target/aarch64-apple-ios/release/libidevice_ffi.a"
 
