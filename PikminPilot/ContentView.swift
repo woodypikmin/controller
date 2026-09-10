@@ -18,10 +18,10 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.2 — Phone-local Screenshot Probe")
+                        Text("Stage 7.2.1 — Phone-local DVT Screenshot Probe")
                             .font(.headline)
 
-                        Text("沿用已實機成功的 RPPairing → LocalDevVPN → RSD。這版新增 Screenshotr over RSD；沒有 WDA localhost:8100 fallback。")
+                        Text("沿用已實機成功的 RPPairing → LocalDevVPN → RSD。這版改用 iOS 17+ DVT RemoteServer screenshot over RSD；沒有 WDA localhost:8100 fallback。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -81,20 +81,20 @@ struct ContentView: View {
                             .scaledToFit()
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                        Text("看到這張圖 = screenshotr → RSD → phone-local tunnel 已經成功。因為按鈕是在 Pikmin Pilot 內按的，這個 probe 正常會先截到目前 iPhone 畫面。")
+                        Text("看到這張圖 = DVT Screenshot → RSD → phone-local tunnel 已經成功。因為按鈕是在 Pikmin Pilot 內按的，這個 probe 正常會先截到目前 iPhone 畫面。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Stage 7.2 測試順序") {
+                Section("Stage 7.2.1 測試順序") {
                     Text("1. 先開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. PHONE-LOCAL → TAKE SCREENSHOT。\n4. 如果畫面成功顯示在 App 裡，把結果截圖給我。\n5. Tap / Swipe 下一版接 phone-local HID；不使用 WDA。")
                 }
 
                 Section("Bot Core") {
                     Label("Stage 5 card-first 水果辨識：保留", systemImage: "checkmark.circle.fill")
                     Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.2：phone-local screenshot", systemImage: "camera.fill")
+                    Label("Stage 7.2.1：phone-local DVT screenshot", systemImage: "camera.fill")
                     Label("下一關：phone-local HID tap/swipe", systemImage: "hand.tap.fill")
                 }
             }
@@ -148,7 +148,7 @@ struct ContentView: View {
         defer { busy = false }
 
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PikminPilot-Stage7.2-Screenshot.png")
+            .appendingPathComponent("PikminPilot-Stage7.2.1-Screenshot.png")
         try? FileManager.default.removeItem(at: outputURL)
 
         let engine = IDeviceEngine(pairingPath: url.path)

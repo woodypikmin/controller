@@ -34,7 +34,7 @@ int32_t PPLaunchPikmin(
     size_t messageCapacity
 );
 
-/// Creates the phone-local tunnel, connects Screenshotr over RSD, captures
+/// Creates the phone-local tunnel, connects DVT RemoteServer over RSD, captures
 /// one screenshot, and writes it to outputPath. Returns 0 on success.
 int32_t PPTakePhoneScreenshot(
     const char *pairingPath,

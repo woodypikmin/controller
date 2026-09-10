@@ -395,64 +395,96 @@ int32_t PPTakePhoneScreenshot(
         return tunnelResult;
     }
 
-    struct ScreenshotrClientHandle *client = NULL;
-    struct IdeviceFfiError *connectError =
-        screenshotr_connect_rsd(adapter, handshake, &client);
+    // iOS 17+ developer screenshot path:
+    // RSD -> com.apple.instruments.dtservicehub -> DVT screenshot channel.
+    // Do not use classic Screenshotr here; that service may not be advertised
+    // on modern RSD transports and produced "service not found" on iOS 26.6.1.
+    struct RemoteServerHandle *remoteServer = NULL;
+    struct IdeviceFfiError *remoteError =
+        remote_server_connect_rsd(adapter, handshake, &remoteServer);
 
-    if (connectError != NULL) {
+    if (remoteError != NULL) {
         rsd_handshake_free(handshake);
         adapter_free(adapter);
         return PPConsumeError(
-            connectError,
+            remoteError,
             message,
             messageCapacity,
-            @"Screenshotr connect failed"
+            @"DVT RemoteServer connect failed"
+        );
+    }
+
+    if (remoteServer == NULL) {
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        PPWriteMessage(message, messageCapacity, @"DVT RemoteServer returned NULL");
+        return -31;
+    }
+
+    struct ScreenshotClientHandle *client = NULL;
+    struct IdeviceFfiError *clientError =
+        screenshot_client_new(remoteServer, &client);
+
+    if (clientError != NULL) {
+        remote_server_free(remoteServer);
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        return PPConsumeError(
+            clientError,
+            message,
+            messageCapacity,
+            @"DVT Screenshot channel failed"
         );
     }
 
     if (client == NULL) {
+        remote_server_free(remoteServer);
         rsd_handshake_free(handshake);
         adapter_free(adapter);
-        PPWriteMessage(message, messageCapacity, @"Screenshotr returned NULL client");
-        return -31;
+        PPWriteMessage(message, messageCapacity, @"DVT Screenshot returned NULL client");
+        return -32;
     }
 
-    struct ScreenshotData screenshot;
-    memset(&screenshot, 0, sizeof(screenshot));
-
+    uint8_t *imageBytes = NULL;
+    uintptr_t imageLength = 0;
     struct IdeviceFfiError *shotError =
-        screenshotr_take_screenshot(client, &screenshot);
+        screenshot_client_take_screenshot(client, &imageBytes, &imageLength);
 
     if (shotError != NULL) {
-        screenshotr_client_free(client);
+        screenshot_client_free(client);
+        remote_server_free(remoteServer);
         rsd_handshake_free(handshake);
         adapter_free(adapter);
         return PPConsumeError(
             shotError,
             message,
             messageCapacity,
-            @"Screenshot failed"
+            @"DVT Screenshot failed"
         );
     }
 
-    if (screenshot.data == NULL || screenshot.length == 0) {
-        screenshotr_screenshot_free(screenshot);
-        screenshotr_client_free(client);
+    if (imageBytes == NULL || imageLength == 0) {
+        if (imageBytes != NULL) {
+            idevice_data_free(imageBytes, imageLength);
+        }
+        screenshot_client_free(client);
+        remote_server_free(remoteServer);
         rsd_handshake_free(handshake);
         adapter_free(adapter);
-        PPWriteMessage(message, messageCapacity, @"Screenshot returned empty data");
-        return -32;
+        PPWriteMessage(message, messageCapacity, @"DVT Screenshot returned empty data");
+        return -33;
     }
 
-    NSData *pngData =
-        [NSData dataWithBytes:screenshot.data length:(NSUInteger)screenshot.length];
+    NSData *imageData =
+        [NSData dataWithBytes:imageBytes length:(NSUInteger)imageLength];
     NSString *path = [NSString stringWithUTF8String:outputPath];
     NSError *writeError = nil;
-    BOOL wrote = [pngData writeToFile:path options:NSDataWritingAtomic error:&writeError];
-    uintptr_t byteCount = screenshot.length;
+    BOOL wrote = [imageData writeToFile:path options:NSDataWritingAtomic error:&writeError];
+    uintptr_t byteCount = imageLength;
 
-    screenshotr_screenshot_free(screenshot);
-    screenshotr_client_free(client);
+    idevice_data_free(imageBytes, imageLength);
+    screenshot_client_free(client);
+    remote_server_free(remoteServer);
     rsd_handshake_free(handshake);
     adapter_free(adapter);
 
@@ -461,16 +493,16 @@ int32_t PPTakePhoneScreenshot(
         PPWriteMessage(
             message,
             messageCapacity,
-            [NSString stringWithFormat:@"Screenshot save failed: %@", detail]
+            [NSString stringWithFormat:@"DVT Screenshot save failed: %@", detail]
         );
-        return -33;
+        return -34;
     }
 
     PPWriteMessage(
         message,
         messageCapacity,
         [NSString stringWithFormat:
-         @"PHONE-LOCAL SCREENSHOT OK • %llu bytes",
+         @"PHONE-LOCAL DVT SCREENSHOT OK • %llu bytes",
          (unsigned long long)byteCount]
     );
 
