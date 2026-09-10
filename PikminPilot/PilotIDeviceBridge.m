@@ -362,3 +362,117 @@ int32_t PPLaunchPikmin(
 
     return 0;
 }
+
+
+int32_t PPTakePhoneScreenshot(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *outputPath,
+    char *message,
+    size_t messageCapacity
+) {
+    if (outputPath == NULL || outputPath[0] == '\0') {
+        PPWriteMessage(message, messageCapacity, @"Screenshot output path is missing");
+        return -30;
+    }
+
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult =
+        PPCreateTunnel(
+            pairingPath,
+            host,
+            port,
+            &adapter,
+            &handshake,
+            message,
+            messageCapacity
+        );
+
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    struct ScreenshotrClientHandle *client = NULL;
+    struct IdeviceFfiError *connectError =
+        screenshotr_connect_rsd(adapter, handshake, &client);
+
+    if (connectError != NULL) {
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        return PPConsumeError(
+            connectError,
+            message,
+            messageCapacity,
+            @"Screenshotr connect failed"
+        );
+    }
+
+    if (client == NULL) {
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        PPWriteMessage(message, messageCapacity, @"Screenshotr returned NULL client");
+        return -31;
+    }
+
+    struct ScreenshotData screenshot;
+    memset(&screenshot, 0, sizeof(screenshot));
+
+    struct IdeviceFfiError *shotError =
+        screenshotr_take_screenshot(client, &screenshot);
+
+    if (shotError != NULL) {
+        screenshotr_client_free(client);
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        return PPConsumeError(
+            shotError,
+            message,
+            messageCapacity,
+            @"Screenshot failed"
+        );
+    }
+
+    if (screenshot.data == NULL || screenshot.length == 0) {
+        screenshotr_screenshot_free(screenshot);
+        screenshotr_client_free(client);
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        PPWriteMessage(message, messageCapacity, @"Screenshot returned empty data");
+        return -32;
+    }
+
+    NSData *pngData =
+        [NSData dataWithBytes:screenshot.data length:(NSUInteger)screenshot.length];
+    NSString *path = [NSString stringWithUTF8String:outputPath];
+    NSError *writeError = nil;
+    BOOL wrote = [pngData writeToFile:path options:NSDataWritingAtomic error:&writeError];
+    uintptr_t byteCount = screenshot.length;
+
+    screenshotr_screenshot_free(screenshot);
+    screenshotr_client_free(client);
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+
+    if (!wrote) {
+        NSString *detail = writeError.localizedDescription ?: @"unknown file write error";
+        PPWriteMessage(
+            message,
+            messageCapacity,
+            [NSString stringWithFormat:@"Screenshot save failed: %@", detail]
+        );
+        return -33;
+    }
+
+    PPWriteMessage(
+        message,
+        messageCapacity,
+        [NSString stringWithFormat:
+         @"PHONE-LOCAL SCREENSHOT OK • %llu bytes",
+         (unsigned long long)byteCount]
+    );
+
+    return 0;
+}

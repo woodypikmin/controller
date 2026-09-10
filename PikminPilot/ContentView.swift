@@ -1,6 +1,6 @@
-
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct ContentView: View {
     @StateObject private var pairing = PairingRecordStore()
@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var status = "尚未測試"
     @State private var busy = false
+    @State private var screenshotImage: UIImage?
 
     var body: some View {
         NavigationStack {
@@ -17,10 +18,10 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.1 — Phone-local RSD")
+                        Text("Stage 7.2 — Phone-local Screenshot Probe")
                             .font(.headline)
 
-                        Text("這版已直接 link 你提供的 IDevice.xcframework。沒有 WDA localhost，也沒有 Windows Runner fallback。")
+                        Text("沿用已實機成功的 RPPairing → LocalDevVPN → RSD。這版新增 Screenshotr over RSD；沒有 WDA localhost:8100 fallback。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -30,9 +31,7 @@ struct ContentView: View {
                 Section("1. Pairing Record") {
                     LabeledContent("狀態", value: pairing.status)
 
-                    Button("匯入 RPPairing Record") {
-                        showImporter = true
-                    }
+                    Button("匯入 RPPairing Record") { showImporter = true }
 
                     Button("VALIDATE WITH IDEVICE") {
                         Task { await validatePairing() }
@@ -42,6 +41,7 @@ struct ContentView: View {
                     if pairing.pairingURL != nil {
                         Button("移除 Pairing Record", role: .destructive) {
                             try? pairing.remove()
+                            screenshotImage = nil
                             status = "Pairing Record 已移除"
                         }
                     }
@@ -53,6 +53,11 @@ struct ContentView: View {
 
                     Button("CONNECT PHONE-LOCAL RSD") {
                         Task { await connectRSD() }
+                    }
+                    .disabled(busy || pairing.pairingURL == nil)
+
+                    Button("PHONE-LOCAL → TAKE SCREENSHOT") {
+                        Task { await takeScreenshot() }
                     }
                     .disabled(busy || pairing.pairingURL == nil)
 
@@ -69,14 +74,28 @@ struct ContentView: View {
                     }
                 }
 
-                Section("這一關的成功標準") {
-                    Text("先看到 `IDEVICE LINKED • RPPairing OK`，再開啟 loopback VPN 後看到 `PHONE-LOCAL RSD ONLINE`。最後按 Launch，Pikmin Bloom 被叫到前景。")
+                if let screenshotImage {
+                    Section("Phone-local Screenshot") {
+                        Image(uiImage: screenshotImage)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                        Text("看到這張圖 = screenshotr → RSD → phone-local tunnel 已經成功。因為按鈕是在 Pikmin Pilot 內按的，這個 probe 正常會先截到目前 iPhone 畫面。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Stage 7.2 測試順序") {
+                    Text("1. 先開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. PHONE-LOCAL → TAKE SCREENSHOT。\n4. 如果畫面成功顯示在 App 裡，把結果截圖給我。\n5. Tap / Swipe 下一版接 phone-local HID；不使用 WDA。")
                 }
 
                 Section("Bot Core") {
-                    Label("Stage 5 水果辨識：保留", systemImage: "checkmark.circle.fill")
+                    Label("Stage 5 card-first 水果辨識：保留", systemImage: "checkmark.circle.fill")
                     Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
-                    Label("下一步：把 screenshot/tap/swipe 接到 phone-local engine", systemImage: "hammer.fill")
+                    Label("Stage 7.2：phone-local screenshot", systemImage: "camera.fill")
+                    Label("下一關：phone-local HID tap/swipe", systemImage: "hand.tap.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -90,11 +109,11 @@ struct ContentView: View {
                     guard let url = urls.first else { return }
                     do {
                         try pairing.importRecord(from: url)
+                        screenshotImage = nil
                         status = "Pairing Record 已匯入，請 Validate"
                     } catch {
                         status = "匯入失敗：\(error.localizedDescription)"
                     }
-
                 case .failure(let error):
                     status = "匯入失敗：\(error.localizedDescription)"
                 }
@@ -105,10 +124,8 @@ struct ContentView: View {
     @MainActor
     private func validatePairing() async {
         guard let url = pairing.pairingURL else { return }
-
         busy = true
         defer { busy = false }
-
         let engine = IDeviceEngine(pairingPath: url.path)
         let result = await engine.validatePairing()
         status = result.message
@@ -117,22 +134,44 @@ struct ContentView: View {
     @MainActor
     private func connectRSD() async {
         guard let url = pairing.pairingURL else { return }
-
         busy = true
         defer { busy = false }
-
         let engine = IDeviceEngine(pairingPath: url.path)
         let result = await engine.probeRSD()
         status = result.message
     }
 
     @MainActor
-    private func launchPikmin() async {
+    private func takeScreenshot() async {
         guard let url = pairing.pairingURL else { return }
-
         busy = true
         defer { busy = false }
 
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PikminPilot-Stage7.2-Screenshot.png")
+        try? FileManager.default.removeItem(at: outputURL)
+
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let result = await engine.takeScreenshot(outputPath: outputURL.path)
+        status = result.message
+
+        if result.ok,
+           let data = try? Data(contentsOf: outputURL),
+           let image = UIImage(data: data) {
+            screenshotImage = image
+        } else {
+            screenshotImage = nil
+            if result.ok {
+                status = "Screenshot bytes received, but UIKit could not decode image"
+            }
+        }
+    }
+
+    @MainActor
+    private func launchPikmin() async {
+        guard let url = pairing.pairingURL else { return }
+        busy = true
+        defer { busy = false }
         let engine = IDeviceEngine(pairingPath: url.path)
         let result = await engine.launchPikmin()
         status = result.message

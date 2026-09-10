@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <stdint.h>
@@ -31,6 +30,17 @@ int32_t PPLaunchPikmin(
     const char *pairingPath,
     const char *host,
     uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates the phone-local tunnel, connects Screenshotr over RSD, captures
+/// one screenshot, and writes it to outputPath. Returns 0 on success.
+int32_t PPTakePhoneScreenshot(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *outputPath,
     char *message,
     size_t messageCapacity
 );
