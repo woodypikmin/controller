@@ -6,74 +6,77 @@ struct ContentView: View {
     @StateObject private var pairing = PairingRecordStore()
 
     @State private var showImporter = false
-    @State private var engineStatus = "尚未連線"
-    @State private var isTestingEngine = false
+    @State private var status = "尚未測試"
+    @State private var busy = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 7) {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7 — No-PC Runtime")
+                        Text("Stage 7.1 — Phone-local RSD")
                             .font(.headline)
 
-                        Text("成品方向：iPhone 內直接建立 Remote Pairing / RSD transport，不再依賴 Windows CMD 或 WDA localhost。")
+                        Text("這版已直接 link 你提供的 IDevice.xcframework。沒有 WDA localhost，也沒有 Windows Runner fallback。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 6)
                 }
 
-                Section("Pairing") {
+                Section("1. Pairing Record") {
                     LabeledContent("狀態", value: pairing.status)
 
-                    Button("匯入 Pairing Record") {
+                    Button("匯入 RPPairing Record") {
                         showImporter = true
                     }
+
+                    Button("VALIDATE WITH IDEVICE") {
+                        Task { await validatePairing() }
+                    }
+                    .disabled(busy || pairing.pairingURL == nil)
 
                     if pairing.pairingURL != nil {
                         Button("移除 Pairing Record", role: .destructive) {
                             try? pairing.remove()
+                            status = "Pairing Record 已移除"
                         }
                     }
                 }
 
-                Section("Embedded Device Engine") {
-                    LabeledContent("狀態", value: engineStatus)
+                Section("2. Phone-local Engine") {
+                    LabeledContent("目標", value: "10.7.0.1:49152")
+                    LabeledContent("狀態", value: status)
 
-                    Button {
-                        Task {
-                            await testEmbeddedEngine()
-                        }
-                    } label: {
-                        if isTestingEngine {
-                            HStack {
-                                ProgressView()
-                                Text("連線中…")
-                            }
-                        } else {
-                            Text("TEST PHONE-LOCAL ENGINE")
+                    Button("CONNECT PHONE-LOCAL RSD") {
+                        Task { await connectRSD() }
+                    }
+                    .disabled(busy || pairing.pairingURL == nil)
+
+                    Button("PHONE-LOCAL → LAUNCH PIKMIN") {
+                        Task { await launchPikmin() }
+                    }
+                    .disabled(busy || pairing.pairingURL == nil)
+
+                    if busy {
+                        HStack {
+                            ProgressView()
+                            Text("idevice 正在連線…")
                         }
                     }
-                    .disabled(isTestingEngine || pairing.pairingURL == nil)
+                }
 
-                    Text("這個按鈕不會偷偷連 127.0.0.1:8100。Stage 7 後續只允許手機端 embedded transport。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Section("這一關的成功標準") {
+                    Text("先看到 `IDEVICE LINKED • RPPairing OK`，再開啟 loopback VPN 後看到 `PHONE-LOCAL RSD ONLINE`。最後按 Launch，Pikmin Bloom 被叫到前景。")
                 }
 
                 Section("Bot Core") {
-                    Label("水果辨識：保留 Stage 5", systemImage: "checkmark.circle.fill")
-                    Label("粉紅篩選 / 12 隻 / GO / X：保留 Stage 5", systemImage: "checkmark.circle.fill")
-                    Label("連續 LOOP：保留 Stage 5", systemImage: "checkmark.circle.fill")
-                    Label("手機端 transport：Stage 7.1 接線中", systemImage: "hammer.fill")
-                }
-
-                Section("成品目標") {
-                    Text("安裝 Pikmin Pilot → 首次匯入 pairing → 之後直接按 RUN。平常執行不接 Windows。")
+                    Label("Stage 5 水果辨識：保留", systemImage: "checkmark.circle.fill")
+                    Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
+                    Label("下一步：把 screenshot/tap/swipe 接到 phone-local engine", systemImage: "hammer.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -87,35 +90,51 @@ struct ContentView: View {
                     guard let url = urls.first else { return }
                     do {
                         try pairing.importRecord(from: url)
-                        engineStatus = "Pairing Record 已載入"
+                        status = "Pairing Record 已匯入，請 Validate"
                     } catch {
-                        engineStatus = "匯入失敗：\(error.localizedDescription)"
+                        status = "匯入失敗：\(error.localizedDescription)"
                     }
 
                 case .failure(let error):
-                    engineStatus = "匯入失敗：\(error.localizedDescription)"
+                    status = "匯入失敗：\(error.localizedDescription)"
                 }
             }
         }
     }
 
     @MainActor
-    private func testEmbeddedEngine() async {
-        guard let url = pairing.pairingURL else {
-            engineStatus = "缺少 Pairing Record"
-            return
-        }
+    private func validatePairing() async {
+        guard let url = pairing.pairingURL else { return }
 
-        isTestingEngine = true
-        defer { isTestingEngine = false }
+        busy = true
+        defer { busy = false }
 
-        let transport = EmbeddedDeviceTransport(pairingRecordPath: url.path)
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let result = await engine.validatePairing()
+        status = result.message
+    }
 
-        do {
-            try await transport.connect()
-            engineStatus = "PHONE-LOCAL ENGINE ONLINE"
-        } catch {
-            engineStatus = error.localizedDescription
-        }
+    @MainActor
+    private func connectRSD() async {
+        guard let url = pairing.pairingURL else { return }
+
+        busy = true
+        defer { busy = false }
+
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let result = await engine.probeRSD()
+        status = result.message
+    }
+
+    @MainActor
+    private func launchPikmin() async {
+        guard let url = pairing.pairingURL else { return }
+
+        busy = true
+        defer { busy = false }
+
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let result = await engine.launchPikmin()
+        status = result.message
     }
 }
