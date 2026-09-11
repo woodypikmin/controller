@@ -18,7 +18,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.4 — Phone-local XCTest Service Probe")
+                        Text("Stage 7.4.1 — Phone-local XCTest Service Probe")
                             .font(.headline)
 
                         Text("CoreDevice UniversalHID 已在 iOS 26.6.1 實機確認 ServiceNotFound。這版改查 phone-local RSD 是否提供 iOS 17+ XCTest 必要的 testmanagerd.remote + dtservicehub；沒有 WDA localhost:8100 fallback。")
@@ -92,19 +92,15 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 7.4 測試順序") {
-                    Text("1. 開 LocalDevVPN。
-2. CONNECT PHONE-LOCAL RSD。
-3. 按 PROBE PHONE-LOCAL XCTEST SERVICES。
-4. 如果顯示 READY，代表 testmanagerd.remote + dtservicehub 都存在，下一版直接接完整 phone-local XCTest Runner。
-5. 如果顯示 BLOCKED，把整段狀態貼給我；我們會知道是缺 testmanagerd 還是 DVT。")
+                Section("Stage 7.4.1 測試順序") {
+                    Text("1. 開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. 按 PROBE PHONE-LOCAL XCTEST SERVICES。\n4. 如果顯示 READY，代表 testmanagerd.remote + dtservicehub 都存在，下一版直接接完整 phone-local XCTest Runner。\n5. 如果顯示 BLOCKED，把整段狀態貼給我；我們會知道是缺 testmanagerd 還是 DVT。")
                 }
 
                 Section("Bot Core") {
                     Label("Stage 5 card-first 水果辨識：保留", systemImage: "checkmark.circle.fill")
                     Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.2.1：phone-local DVT screenshot ✅", systemImage: "camera.fill")
-                    Label("Stage 7.4：phone-local testmanagerd/XCTest probe", systemImage: "wrench.and.screwdriver.fill")
+                    Label("Stage 7.4.1：phone-local testmanagerd/XCTest probe", systemImage: "wrench.and.screwdriver.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
