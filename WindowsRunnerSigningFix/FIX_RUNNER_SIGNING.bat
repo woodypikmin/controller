@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo ============================================================
-echo Pikmin Pilot Stage 7.8.4 - Nested XCTest Signing Fix
+echo Pikmin Pilot Stage 7.8.5 - Activate No-Relaunch Tap Proof
 echo This is ONE-TIME INSTALL/RESIGN work. It does NOT stay running.
 echo ============================================================
 echo.
@@ -53,7 +53,7 @@ if "%~1"=="" (
   echo.
   echo Drag the GitHub Actions Runner unsigned IPA onto this BAT file.
   echo Example artifact filename:
-  echo   PikminPilotRunner-Stage7.8.4-Nested-XCTest-Signing-Fix-unsigned.ipa
+  echo   PikminPilotRunner-Stage7.8.5-Activate-No-Relaunch-Tap-Proof-unsigned.ipa
   echo.
   pause
   exit /b 6

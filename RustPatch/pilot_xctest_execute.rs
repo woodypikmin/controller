@@ -1,4 +1,4 @@
-// Pikmin Pilot Stage 7.8.4
+// Pikmin Pilot Stage 7.8.5
 // Execute the installed UI-test runner end-to-end over the already-established
 // phone-local RSD transport. No WDA HTTP transport is involved.
 
@@ -110,7 +110,7 @@ pub(crate) unsafe fn pilot_xctest_execute_center_tap_impl(
         .await?;
 
         Ok(format!(
-            "PHONE-LOCAL XCTEST CENTER TAP COMPLETED • runner={} • pid={} • target={}",
+            "PHONE-LOCAL XCTEST CENTER TAP COMPLETED • tap-dispatch=completed • mode=activate-no-relaunch • runner={} • pid={} • target={}",
             runner_id, pid, target_id
         ))
     });

@@ -19,7 +19,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.8.4 — NESTED XCTEST SIGNING FIX")
+                        Text("Stage 7.8.5 — ACTIVATE / NO-RELAUNCH TAP PROOF")
                             .font(.headline)
 
                         Text("沿用已實機成功的 phone-local RSD、InstallationProxy、DTX bootstrap 與 Runner。這版把真正 XCTest lifecycle 串起來：TestConfig → testmanagerd ctrl/main → ProcessControl launch/authorize → XCTestDriverInterface → start test plan → testTapPikminCenter()。不使用 WDA localhost:8100。")
@@ -78,7 +78,7 @@ struct ContentView: View {
 
                         if isBootstrapFailure {
                             Label {
-                                Text("7.8.4 已確認 driver=ready；目前阻塞點是 Runner 內 PlugIns/*.xctest 載入失敗。這通常是外層 Runner 已簽名、但巢狀 .xctest 沒有用同一 Team ID 重新簽名。主 App runtime 不改走 WDA；先用 ZIP 內 WindowsRunnerSigningFix 一次性修 Runner 簽章後再測。")
+                                Text("Runner 的巢狀 .xctest 已能載入。7.8.5 專門驗證 input：不再 app.launch() 重啟 Pikmin；Runner 只接受已經在背景執行的 Pikmin，使用 activate() 帶回前景，等待 4 秒後只點一次畫面正中央。")
                                     .font(.footnote)
                             } icon: {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -124,7 +124,7 @@ struct ContentView: View {
                     .disabled(busy || pairing.pairingURL == nil)
 
 
-                    Button("RUN XCTEST → PIKMIN CENTER TAP") {
+                    Button("RUN XCTEST → ACTIVATE + CENTER TAP") {
                         Task { await runXCTestCenterTap() }
                     }
                     .disabled(busy || pairing.pairingURL == nil)
@@ -156,7 +156,7 @@ struct ContentView: View {
                 }
 
                 Section("Stage 7.8 測試順序") {
-                    Text("1. 開 LocalDevVPN。\n2. 先讓 Pikmin Bloom 停在正中央被點會明顯有反應的畫面。\n3. 回 Pikmin Pilot → CONNECT PHONE-LOCAL RSD。\n4. 按 RUN XCTEST → PIKMIN CENTER TAP。\n5. 不要手動切 App。Runner 應自動帶 Pikmin Bloom 到前景。\n6. 約 2 秒後觀察畫面中央是否真的被點。\n7. 測試後回 Pikmin Pilot，把最後狀態全文貼回來。\n\n理想狀態：PHONE-LOCAL XCTEST CENTER TAP COMPLETED • runner=... • pid=... • target=com.nianticlabs.pikmin")
+                    Text("1. 開 LocalDevVPN。\n2. 先開 Pikmin Bloom，停在正中央被點會明顯有反應的畫面；不要把遊戲從 App Switcher 關掉。\n3. 回 Pikmin Pilot → CONNECT PHONE-LOCAL RSD。\n4. 按 RUN XCTEST → ACTIVATE + CENTER TAP。\n5. Runner 只會 activate 已存在的 Pikmin process，不會呼叫 launch() 重啟遊戲。\n6. Pikmin 回到前景後先完全不操作 4 秒，再只點一次正中央；這 4 秒就是肉眼辨識 activate 與 tap 的間隔。\n7. 測試後回 Pikmin Pilot，COPY STATUS。\n\n理想狀態：PHONE-LOCAL XCTEST CENTER TAP COMPLETED • tap-dispatch=completed • mode=activate-no-relaunch • runner=... • pid=... • target=com.nianticlabs.pikmin")
                 }
 
                 Section("Bot Core") {
@@ -167,7 +167,7 @@ struct ContentView: View {
                     Label("Stage 7.5：DTX handshake bootstrap ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.6：real XCUITest Runner package + discovery ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.8：XCTest lifecycle + center tap", systemImage: "hand.tap.fill")
+                    Label("Stage 7.8.5：activate existing Pikmin + center tap proof", systemImage: "hand.tap.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -274,7 +274,7 @@ struct ContentView: View {
         guard let url = pairing.pairingURL else { return }
 
         busy = true
-        status = "PHONE-LOCAL XCTEST CENTER TAP STARTING…"
+        status = "PHONE-LOCAL XCTEST CENTER TAP STARTING • mode=activate-no-relaunch • Pikmin must already be running…"
 
         // Runner/Pikmin will take foreground. Keep Pikmin Pilot alive long
         // enough to maintain testmanagerd/DTX until this short test finishes.

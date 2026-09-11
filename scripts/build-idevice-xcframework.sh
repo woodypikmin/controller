@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.8.4: keep the proven 7.8.3 driver-ready runtime path; Runner signing is fixed at install time.
+# Stage 7.8.5: keep the proven 7.8.3 driver-ready runtime path; Runner signing is fixed at install time.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
@@ -15,7 +15,7 @@ git clone https://github.com/jkcoxson/idevice.git "$CACHE"
 cd "$CACHE"
 git checkout "$PIN"
 
-# Stage 7.8.4: upstream idevice guesses that every XCTest bootstrap NSError
+# Stage 7.8.5: upstream idevice guesses that every XCTest bootstrap NSError
 # with numeric code 103 means an untrusted developer certificate. That guess
 # is not safe without the NSError domain. Replace it with raw archive string
 # extraction so the phone can display Apple's actual domain/description text.
@@ -45,7 +45,7 @@ new = """                        // Preserve the numeric code but do not guess i
                         }
 """
 if old not in s:
-    raise SystemExit("Stage 7.8.4 bootstrap NSError patch target not found")
+    raise SystemExit("Stage 7.8.5 bootstrap NSError patch target not found")
 s = s.replace(old, new, 1)
 p.write_text(s)
 PY_BOOTERR
@@ -278,7 +278,7 @@ pub async fn pilot_run_existing_rsd_xctest(
         cfg.runner_args.as_deref(),
     );
 
-    // Stage 7.8.4: intentionally keep upstream build_launch_env byte-for-byte.
+    // Stage 7.8.5: intentionally keep upstream build_launch_env byte-for-byte.
     // Stage 7.8.2 overrode DYLD_* after build_launch_env; on this iOS 26.6.1
     // device that changed the failure from a late bootstrap NSError to an
     // earlier BrokenPipe while waiting for XCTestDriverInterface.  Reverting
