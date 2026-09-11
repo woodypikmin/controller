@@ -29,7 +29,7 @@ fn write_message(message: *mut c_char, capacity: usize, text: &str) {
 
 async fn run_command(
     adapter_ref: &mut idevice::tcp::handle::AdapterHandle,
-    handshake_ref: &idevice::services::rsd::RsdHandshake,
+    handshake_ref: &mut idevice::services::rsd::RsdHandshake,
     command: &str,
     x: f64,
     y: f64,
@@ -124,7 +124,7 @@ unsafe fn execute_command_impl(
     let result: Result<String, String> = run_sync_local(async move {
         let adapter_ref = unsafe { &mut (*adapter).0 };
         let handshake_ref = unsafe { &mut (*handshake).0 };
-        run_command(adapter_ref, &*handshake_ref, command, x, y).await
+        run_command(adapter_ref, handshake_ref, command, x, y).await
     });
 
     match result {
