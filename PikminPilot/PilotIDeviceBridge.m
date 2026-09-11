@@ -2,6 +2,29 @@
 #import "PilotIDeviceBridge.h"
 #import "idevice.h"
 
+// Stage 7.3 custom Rust symbols are linked into libidevice_ffi.a at Actions
+// build time. Keep declarations here so Objective-C does not depend on
+// cbindgen deciding to expose these internal helper functions in idevice.h.
+extern int32_t pilot_hid_tap_rsd(
+    struct AdapterHandle *provider,
+    struct RsdHandshakeHandle *handshake,
+    uint16_t x,
+    uint16_t y,
+    char *message,
+    size_t message_capacity
+);
+
+extern int32_t pilot_hid_drag_rsd(
+    struct AdapterHandle *provider,
+    struct RsdHandshakeHandle *handshake,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t x2,
+    uint16_t y2,
+    char *message,
+    size_t message_capacity
+);
+
 #import <Foundation/Foundation.h>
 #import <arpa/inet.h>
 #import <netinet/in.h>
@@ -507,4 +530,78 @@ int32_t PPTakePhoneScreenshot(
     );
 
     return 0;
+}
+
+int32_t PPPhoneTap(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x,
+    uint16_t y,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath, host, port,
+        &adapter, &handshake,
+        message, messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result = pilot_hid_tap_rsd(
+        adapter,
+        handshake,
+        x,
+        y,
+        message,
+        messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+int32_t PPPhoneDrag(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t x2,
+    uint16_t y2,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath, host, port,
+        &adapter, &handshake,
+        message, messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result = pilot_hid_drag_rsd(
+        adapter,
+        handshake,
+        x1,
+        y1,
+        x2,
+        y2,
+        message,
+        messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
 }

@@ -7,40 +7,32 @@
 extern "C" {
 #endif
 
-/// Returns 0 on success. Writes a human-readable result into message.
-int32_t PPValidateRPPairingFile(
-    const char *path,
+int32_t PPValidateRPPairingFile(const char *path, char *message, size_t messageCapacity);
+int32_t PPProbeRSD(const char *pairingPath, const char *host, uint16_t port, char *message, size_t messageCapacity);
+int32_t PPLaunchPikmin(const char *pairingPath, const char *host, uint16_t port, char *message, size_t messageCapacity);
+int32_t PPTakePhoneScreenshot(const char *pairingPath, const char *host, uint16_t port, const char *outputPath, char *message, size_t messageCapacity);
+
+/// Stage 7.3: create a fresh phone-local RSD tunnel, open the CoreDevice display
+/// auth gate, then send one normalized UniversalHID tap. Coordinates 0...65535.
+int32_t PPPhoneTap(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x,
+    uint16_t y,
     char *message,
     size_t messageCapacity
 );
 
-/// Creates an on-device RPPairing tunnel to host:port and performs an RSD
-/// handshake. Returns 0 on success.
-int32_t PPProbeRSD(
+/// Stage 7.3: same transport/auth gate, then send a deliberate UniversalHID drag.
+int32_t PPPhoneDrag(
     const char *pairingPath,
     const char *host,
     uint16_t port,
-    char *message,
-    size_t messageCapacity
-);
-
-/// Creates the same phone-local tunnel and uses CoreDevice AppService to
-/// launch Pikmin Bloom. Returns 0 on success.
-int32_t PPLaunchPikmin(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    char *message,
-    size_t messageCapacity
-);
-
-/// Creates the phone-local tunnel, connects DVT RemoteServer over RSD, captures
-/// one screenshot, and writes it to outputPath. Returns 0 on success.
-int32_t PPTakePhoneScreenshot(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    const char *outputPath,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t x2,
+    uint16_t y2,
     char *message,
     size_t messageCapacity
 );
