@@ -1,5 +1,0 @@
-Pikmin Pilot Stage 7.1 - NO VENDOR repository package
-
-This ZIP intentionally contains NO prebuilt IDevice.xcframework and NO libidevice_ffi.a.
-GitHub Actions will build the XCFramework on the macOS runner at workflow runtime.
-If this extracted folder is tens of MB, you are not looking at this package.
