@@ -1,88 +1,39 @@
-# Pikmin Pilot — Stage 7.1
+# Pikmin Pilot — Stage 7.3 NO_VENDOR
 
-This build vendors the exact `IDevice.xcframework` produced by Stage 7.0.2.
+Stage 7.3 adds a **phone-local CoreDevice HID Tap / Drag probe** on top of the already proven:
 
-## What is real in 7.1
+- RPPairing record validation
+- LocalDevVPN loopback (`10.7.0.1:49152`)
+- phone-local RSD
+- CoreDevice AppService launch
+- DVT screenshot over RSD
 
-The app now calls the idevice FFI directly:
+## New in 7.3
 
-1. `rp_pairing_file_read`
-2. `rp_pairing_file_to_bytes`
-3. `tunnel_create_rppairing`
-4. `rsd_get_uuid`
-5. `app_service_connect_rsd`
-6. `app_service_launch_app("com.nianticlabs.pikmin")`
+The GitHub Actions build pins a newer `jkcoxson/idevice` revision containing the modern CoreDevice HID/display implementation. During the runner build it adds a tiny FFI module that:
 
-There is no `127.0.0.1:8100` WDA fallback and no Windows Runner path.
+1. Starts the CoreDevice display media stream auth gate.
+2. Keeps the audio/video UDP sockets alive.
+3. Waits 300 ms for BackBoard to authenticate the synthetic HID surface.
+4. Connects `UniversalHidServiceClient` over the **same RSD generation**.
+5. Sends either `tap()` or `drag()`.
+6. Stops the display media stream.
 
-## Device test order
+No WDA `localhost:8100` fallback is used.
 
-### A. Import a real RPPairing record
+## Test on iPhone
 
-In Pikmin Pilot:
+1. Open LocalDevVPN and confirm it is connected.
+2. Open Pikmin Pilot.
+3. `VALIDATE WITH IDEVICE`.
+4. `CONNECT PHONE-LOCAL RSD`.
+5. `PHONE-LOCAL → LAUNCH PIKMIN`.
+6. Put Pikmin Bloom on a screen where a center tap / vertical swipe is visible.
+7. Return to Pikmin Pilot and try:
+   - `PHONE-LOCAL → TAP CENTER`
+   - `PHONE-LOCAL → SWIPE UP`
+8. Report both the status text and whether Pikmin Bloom actually reacted.
 
-`匯入 RPPairing Record`
+## Repository size
 
-Then:
-
-`VALIDATE WITH IDEVICE`
-
-Expected:
-
-`IDEVICE LINKED • RPPairing OK • ... bytes`
-
-This proves the Rust static library is linked and the imported record is in the
-RPPairing format expected by idevice.
-
-### B. Enable loopback VPN
-
-For the current on-device RPPairing recipe, the test target is:
-
-`10.7.0.1:49152`
-
-This is the LocalDevVPN-style device endpoint used by existing on-device
-idevice integrations.
-
-Then press:
-
-`CONNECT PHONE-LOCAL RSD`
-
-Expected:
-
-`PHONE-LOCAL RSD ONLINE • UUID ...`
-
-### C. Launch Pikmin without Windows
-
-Press:
-
-`PHONE-LOCAL → LAUNCH PIKMIN`
-
-Expected:
-
-Pikmin Bloom comes to the foreground.
-
-If this succeeds, the next stage replaces the remaining Stage 5 WDA
-`screenshot/tap/swipe` primitives with the phone-local RSD/CoreDevice
-equivalents and restores RUN / 5 / 10 / 20 / 50 / infinite loop controls.
-
-## Final-product note
-
-Stage 7.1 still assumes a valid RPPairing record and a loopback VPN transport
-exist on the phone. These are setup/transport components, not Windows runtime
-dependencies. The final packaging work will try to fold as much of this setup
-into Pikmin Pilot as iOS signing/Network Extension entitlements allow.
-
-
-## Stage 7.1 GitHub-ready package note
-
-This package intentionally does **not** commit the large `IDevice.xcframework` binary.
-GitHub Actions builds the pinned idevice revision on the macOS runner, strips embedded LLVM bitcode, creates the iPhone arm64 XCFramework, and then builds Pikmin Pilot.
-
-This keeps every repository file small enough for browser upload while preserving the Stage 7.1 FFI integration.
-
-The first device gate is deliberately small:
-validate the pairing file, then attempt the phone-local RPPairing/RSD path,
-then use CoreDevice AppService to launch Pikmin.
-
-Screenshot/tap/swipe are NOT claimed complete in Stage 7.1; those move next
-after RSD/AppService is proven on-device.
+This is still NO_VENDOR. The large Rust static library / XCFramework is produced temporarily by GitHub Actions and is not committed to the repository.
