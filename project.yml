@@ -48,3 +48,32 @@ targets:
           - "-lz"
 
         CODE_SIGN_STYLE: Automatic
+
+  PikminPilotRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+
+    sources:
+      - path: PikminPilotRunnerUITests
+
+    dependencies:
+      - target: PikminPilot
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.PikminPilotRunnerUITests
+        PRODUCT_NAME: PikminPilotRunnerUITests
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: PikminPilot
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  PikminPilotRunnerUITests:
+    build:
+      targets:
+        PikminPilot: all
+        PikminPilotRunnerUITests: [test]
+    test:
+      targets:
+        - PikminPilotRunnerUITests
