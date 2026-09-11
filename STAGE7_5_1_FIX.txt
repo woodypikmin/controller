@@ -1,0 +1,16 @@
+Stage 7.5.1 link fix
+
+Stage 7.5 kept the old Objective-C/Swift service-probe button from Stage 7.4:
+  PPProbePhoneLocalXCTestServices -> pilot_xctest_service_probe
+
+But the Stage 7.5 Rust build script only exported:
+  pilot_xctest_dtx_bootstrap
+
+Therefore Xcode failed at final link with:
+  Undefined symbol: _pilot_xctest_service_probe
+
+Stage 7.5.1 exports BOTH:
+  pilot_xctest_service_probe
+  pilot_xctest_dtx_bootstrap
+
+No phone-local RSD/DTX protocol logic was changed.

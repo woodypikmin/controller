@@ -1,0 +1,27 @@
+Stage 7.6.2 — scheme fix
+
+7.6.1 failed because its workflow parsed project.pbxproj with a brittle regex
+to discover PBX target UUIDs.
+
+7.6.2 removes that entire approach.
+
+XcodeGen's supported Target Scheme syntax is used instead:
+  targets:
+    PikminPilot:
+      scheme:
+        testTargets:
+          - PikminPilotRunnerUITests
+        management:
+          shared: true
+
+The separate PikminPilotRunnerUITests scheme is removed.
+
+Both normal app build and build-for-testing now use the already-proven:
+  -scheme PikminPilot
+
+The workflow still verifies that:
+- PikminPilot target exists
+- PikminPilotRunnerUITests target exists
+- PikminPilot scheme exists
+
+No RSD, DTX, XCTest runner-discovery, or test code changed.

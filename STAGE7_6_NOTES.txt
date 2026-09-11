@@ -1,0 +1,9 @@
+Stage 7.6.2 creates the actual XCUITest runner artifact.
+
+This stage deliberately separates:
+A) Runner build/sign/install viability
+B) Full phone-local XCTest session execution
+
+The runner already contains the final minimum test action (launch Pikmin + tap center).
+Once phone-local InstallationProxy reports the runner as installed, Stage 7.6.2.1
+will connect the proven DTX bootstrap to this runner and execute the test plan.

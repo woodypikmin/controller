@@ -1,0 +1,2 @@
+Stage 7.5 deliberately tests real DTX handshakes before adding a Runner.
+This prevents confusing 'service exists' with 'XCTest protocol is usable'.
