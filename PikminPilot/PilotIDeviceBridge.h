@@ -1,0 +1,106 @@
+#pragma once
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/// Returns 0 on success. Writes a human-readable result into message.
+int32_t PPValidateRPPairingFile(
+    const char *path,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates an on-device RPPairing tunnel to host:port and performs an RSD
+/// handshake. Returns 0 on success.
+int32_t PPProbeRSD(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates the same phone-local tunnel and uses CoreDevice AppService to
+/// launch Pikmin Bloom. Returns 0 on success.
+int32_t PPLaunchPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates the phone-local tunnel, connects DVT RemoteServer over RSD, captures
+/// one screenshot, and writes it to outputPath. Returns 0 on success.
+int32_t PPTakePhoneScreenshot(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *outputPath,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Creates the phone-local RSD tunnel and checks whether the modern
+/// testmanagerd + DVT services required for iOS 17+ XCTest are advertised.
+int32_t PPProbePhoneLocalXCTestServices(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Opens dtservicehub + two testmanagerd.remote DTX sessions using the
+/// existing phone-local RSD tunnel and performs their capability handshakes.
+int32_t PPBootstrapPhoneLocalXCTestDTX(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Uses InstallationProxy over the existing phone-local RSD tunnel to locate
+/// the signed Pikmin Pilot XCUITest Runner installed on the iPhone.
+int32_t PPDiscoverPhoneLocalXCTestRunner(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Launches any installed bundle ID using CoreDevice AppService over the
+/// phone-local RSD tunnel. Stage 7.7 uses this for the discovered .xctrunner.
+int32_t PPLaunchBundleID(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *bundleID,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Reads the real installed Runner + Pikmin metadata needed to build
+/// XCTestConfiguration over the phone-local RSD tunnel.
+int32_t PPPreparePhoneLocalXCTestMetadata(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+#ifdef __cplusplus
+}
+#endif
