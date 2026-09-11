@@ -111,6 +111,26 @@ int32_t PPRunPhoneLocalXCTestCenterTap(
     size_t messageCapacity
 );
 
+/// Activates an already-running Pikmin Bloom via the signed XCUITest Runner.
+int32_t PPRunPhoneLocalXCTestActivate(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Dispatches one normalized coordinate tap through XCUITest without WDA.
+int32_t PPRunPhoneLocalXCTestTap(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    double normalizedX,
+    double normalizedY,
+    char *message,
+    size_t messageCapacity
+);
+
 #ifdef __cplusplus
 }
 #endif

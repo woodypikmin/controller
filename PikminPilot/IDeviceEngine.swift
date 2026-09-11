@@ -63,6 +63,40 @@ actor IDeviceEngine {
         }
     }
 
+
+    func runXCTestActivateOnly() -> Result {
+        callBridge { path, message, capacity in
+            host.withCString { hostCString in
+                PPRunPhoneLocalXCTestActivate(
+                    path,
+                    hostCString,
+                    port,
+                    message,
+                    capacity
+                )
+            }
+        }
+    }
+
+    func runXCTestTap(
+        normalizedX: Double,
+        normalizedY: Double
+    ) -> Result {
+        callBridge { path, message, capacity in
+            host.withCString { hostCString in
+                PPRunPhoneLocalXCTestTap(
+                    path,
+                    hostCString,
+                    port,
+                    normalizedX,
+                    normalizedY,
+                    message,
+                    capacity
+                )
+            }
+        }
+    }
+
     func discoverXCTestRunner() -> Result {
         callBridge { path, message, capacity in
             host.withCString { hostCString in

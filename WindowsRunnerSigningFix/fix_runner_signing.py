@@ -16,6 +16,21 @@ MARKERS = ("pikminpilotrunner", "pikminpilotrunneruitests", ".xctrunner")
 P12_PASSWORD = "pikminpilot"
 
 
+def decode_output(data: bytes | None) -> str:
+    """Decode CLI output deterministically on Windows.
+
+    go-ios/OpenSSL emit UTF-8 even when the Windows ANSI code page is cp950.
+    Never let subprocess use the locale codec implicitly.
+    """
+    if not data:
+        return ""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        # Preserve diagnostics instead of aborting the signing flow.
+        return data.decode("utf-8", errors="replace")
+
+
 class FixError(RuntimeError):
     pass
 
@@ -71,14 +86,17 @@ def build_p12(openssl: str, key: Path, certs: list[Path], dest: Path) -> Path:
                 "-name",
                 "PikminPilotRunner",
             ],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
             timeout=30,
         )
+        stdout = decode_output(proc.stdout)
+        stderr = decode_output(proc.stderr)
         if proc.returncode == 0 and dest.exists():
             log("p12", f"matched Sideloadly cert {cert.name}")
             return dest
-        errors.append(f"{cert.name}: {proc.stderr.strip()[-300:]}")
+        errors.append(f"{cert.name}: {(stderr or stdout).strip()[-300:]}")
     raise FixError("No Sideloadly certificate matched key.pem. " + " | ".join(errors))
 
 
@@ -208,8 +226,16 @@ def run_sign_install(ios: str, ipa: Path, p12: Path, profile: Path, bundle_id: s
         f"--bundleid={bundle_id}",
         "--install",
     ]
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=300)
-    out = (proc.stdout + "\n" + proc.stderr).strip()
+    proc = subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+        timeout=300,
+    )
+    stdout = decode_output(proc.stdout)
+    stderr = decode_output(proc.stderr)
+    out = (stdout + "\n" + stderr).strip()
     if proc.returncode != 0:
         raise FixError("go-ios recursive sign/install failed:\n" + out[-3000:])
     return out
@@ -270,7 +296,9 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 21
     except Exception as exc:
+        import traceback
         print(f"ERROR: unexpected {type(exc).__name__}: {exc}", file=sys.stderr)
+        traceback.print_exc()
         return 22
 
 

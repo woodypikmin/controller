@@ -23,6 +23,22 @@ extern int32_t pilot_xctest_execute_center_tap(
     size_t message_capacity
 );
 
+extern int32_t pilot_xctest_execute_activate(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    char *message,
+    size_t message_capacity
+);
+
+extern int32_t pilot_xctest_execute_tap(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    double normalized_x,
+    double normalized_y,
+    char *message,
+    size_t message_capacity
+);
+
 // Custom Stage 7.6 runner discovery export injected into idevice-ffi.
 extern int32_t pilot_xctest_runner_discovery(
     struct AdapterHandle *adapter,
@@ -832,4 +848,64 @@ int32_t PPRunPhoneLocalXCTestCenterTap(
     adapter_free(adapter);
     return result;
 }
+
+int32_t PPRunPhoneLocalXCTestActivate(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath, host, port, &adapter, &handshake, message, messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result = pilot_xctest_execute_activate(
+        adapter, handshake, message, messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+int32_t PPRunPhoneLocalXCTestTap(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    double normalizedX,
+    double normalizedY,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath, host, port, &adapter, &handshake, message, messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result = pilot_xctest_execute_tap(
+        adapter,
+        handshake,
+        normalizedX,
+        normalizedY,
+        message,
+        messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
 

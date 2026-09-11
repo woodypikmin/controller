@@ -5,48 +5,68 @@ final class PikminPilotRunnerUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testTapPikminCenter() throws {
+    func testPilotCommand() throws {
+        let env = ProcessInfo.processInfo.environment
+        let command = env["PIKMIN_PILOT_COMMAND"] ?? "center"
         let app = XCUIApplication(bundleIdentifier: "com.nianticlabs.pikmin")
 
-        // Stage 7.8.5 proof mode: the user prepares Pikmin Bloom first and then
-        // switches to Pikmin Pilot. We deliberately refuse to call launch(),
-        // because XCUIApplication.launch() terminates/relaunches the target and
-        // hides whether the center tap itself actually worked.
-        let initialState = app.state
-        switch initialState {
+        // Never cold-launch the game in Stage 8. The user (or later the bot
+        // bootstrap) leaves Pikmin Bloom alive; XCTest only re-activates the
+        // existing process and dispatches coordinates.
+        switch app.state {
         case .runningForeground, .runningBackground, .runningBackgroundSuspended:
             break
         default:
-            XCTFail("Pikmin Bloom is not already running (state=\(initialState.rawValue)). Refusing to relaunch it during the center-tap proof test.")
+            XCTFail("Pikmin Bloom is not already running (state=\(app.state.rawValue)); refusing to relaunch")
             return
         }
 
-        // Bring the existing Pikmin process to the foreground without a normal
-        // launch/restart cycle.
         app.activate()
-
         XCTAssertTrue(
             app.wait(for: .runningForeground, timeout: 15),
             "Pikmin Bloom did not reach foreground after activate()"
         )
 
-        // Make the tap visually distinguishable from foreground activation:
-        // Pikmin sits untouched for four seconds, then receives exactly one
-        // normalized center tap.
-        sleep(4)
+        if command == "activate" {
+            // Stage 8 phase A: leave the target foreground so Pikmin Pilot's
+            // background task can take a DVT screenshot of the real game.
+            sleep(1)
+            return
+        }
+
+        let x: Double
+        let y: Double
+
+        if command == "tap" {
+            guard
+                let sx = env["PIKMIN_PILOT_X"],
+                let sy = env["PIKMIN_PILOT_Y"],
+                let parsedX = Double(sx),
+                let parsedY = Double(sy),
+                parsedX >= 0, parsedX <= 1,
+                parsedY >= 0, parsedY <= 1
+            else {
+                XCTFail("Invalid PIKMIN_PILOT_X/Y environment")
+                return
+            }
+            x = parsedX
+            y = parsedY
+        } else {
+            // Retains the Stage 7.8.5 proof button.
+            x = 0.5
+            y = 0.5
+        }
 
         app.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            withNormalizedOffset: CGVector(dx: x, dy: y)
         ).tap()
 
-        // If tap() cannot be dispatched XCTest fails here; reaching the end of
-        // the test plus a completed test plan is our transport-level proof.
         XCTAssertEqual(
             app.state,
             .runningForeground,
-            "Pikmin Bloom left the foreground immediately after center tap"
+            "Pikmin Bloom left foreground immediately after tap"
         )
 
-        sleep(2)
+        sleep(1)
     }
 }

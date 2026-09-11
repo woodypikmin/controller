@@ -1,9 +1,12 @@
 @echo off
 setlocal EnableExtensions
+chcp 65001 >nul 2>nul
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
 
 echo ============================================================
-echo Pikmin Pilot Stage 7.8.5 - Activate No-Relaunch Tap Proof
+echo Pikmin Pilot Stage 7.8.5.1 - Windows UTF-8 Signing Fix
 echo This is ONE-TIME INSTALL/RESIGN work. It does NOT stay running.
 echo ============================================================
 echo.

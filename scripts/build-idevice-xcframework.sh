@@ -416,6 +416,44 @@ pub unsafe extern "C" fn pilot_xctest_execute_center_tap(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn pilot_xctest_execute_activate(
+    adapter: *mut core_device_proxy::AdapterHandle,
+    handshake: *mut rsd::RsdHandshakeHandle,
+    message: *mut std::ffi::c_char,
+    message_capacity: usize,
+) -> i32 {
+    unsafe {
+        pilot_xctest_execute::pilot_xctest_execute_activate_impl(
+            adapter,
+            handshake,
+            message,
+            message_capacity,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pilot_xctest_execute_tap(
+    adapter: *mut core_device_proxy::AdapterHandle,
+    handshake: *mut rsd::RsdHandshakeHandle,
+    normalized_x: f64,
+    normalized_y: f64,
+    message: *mut std::ffi::c_char,
+    message_capacity: usize,
+) -> i32 {
+    unsafe {
+        pilot_xctest_execute::pilot_xctest_execute_tap_impl(
+            adapter,
+            handshake,
+            normalized_x,
+            normalized_y,
+            message,
+            message_capacity,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pilot_xctest_dtx_bootstrap(
     adapter: *mut core_device_proxy::AdapterHandle,
     handshake: *mut rsd::RsdHandshakeHandle,
@@ -462,11 +500,13 @@ required = [
     b"pilot_xctest_runner_discovery",
     b"pilot_xctest_metadata",
     b"pilot_xctest_execute_center_tap",
+    b"pilot_xctest_execute_activate",
+    b"pilot_xctest_execute_tap",
 ]
 missing = [name.decode() for name in required if name not in data]
 if missing:
     raise SystemExit("Missing Stage 7.8 export(s): " + ", ".join(missing))
-print("Stage 7.8 XCTest execute export set present.")
+print("Stage 8.0 XCTest dynamic-command export set present.")
 PY
 
 cp ffi/idevice.h "$HEADERS/idevice.h"
@@ -480,4 +520,4 @@ test -f "$OUT/Info.plist"
 test -f "$OUT/ios-arm64/libidevice_ffi.a"
 test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
-echo "Built Stage 7.8 execute-center-tap $OUT"
+echo "Built Stage 8.0 DVT-to-XCTest dynamic tap $OUT"
