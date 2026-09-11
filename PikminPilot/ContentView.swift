@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var status = "尚未測試"
     @State private var busy = false
     @State private var screenshotImage: UIImage?
+    @State private var statusCopied = false
 
     var body: some View {
         NavigationStack {
@@ -18,7 +19,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.8 — XCTEST EXECUTE CENTER TAP")
+                        Text("Stage 7.8.1 — XCTEST CENTER TAP + COPY STATUS")
                             .font(.headline)
 
                         Text("沿用已實機成功的 phone-local RSD、InstallationProxy、DTX bootstrap 與 Runner。這版把真正 XCTest lifecycle 串起來：TestConfig → testmanagerd ctrl/main → ProcessControl launch/authorize → XCTestDriverInterface → start test plan → testTapPikminCenter()。不使用 WDA localhost:8100。")
@@ -49,7 +50,43 @@ struct ContentView: View {
 
                 Section("2. Phone-local Engine") {
                     LabeledContent("目標", value: "10.7.0.1:49152")
-                    LabeledContent("狀態", value: status)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("狀態")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            Button {
+                                copyStatusToClipboard()
+                            } label: {
+                                Label(
+                                    statusCopied ? "COPIED" : "COPY STATUS",
+                                    systemImage: statusCopied ? "checkmark" : "doc.on.doc"
+                                )
+                                .font(.caption.bold())
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        Text(status)
+                            .font(.footnote.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if isRunnerTrustFailure {
+                            Label {
+                                Text("這是 Runner 的 Developer App Certificate 信任/驗證失敗，不是 RSD pairing 或 DTX handshake 失敗。先關 LocalDevVPN，到 設定 → 一般 → VPN 與裝置管理，對目前簽 Runner 的 Developer App 執行 Trust / Verify；完成後再開 LocalDevVPN 重試。")
+                                    .font(.footnote)
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                            }
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.vertical, 4)
 
                     Button("CONNECT PHONE-LOCAL RSD") {
                         Task { await connectRSD() }
@@ -153,6 +190,25 @@ struct ContentView: View {
                     status = "匯入失敗：\(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+
+    private var isRunnerTrustFailure: Bool {
+        let lower = status.lowercased()
+        return lower.contains("untrusted developer")
+            || lower.contains("developer app certificate")
+            || (lower.contains("code 103") && lower.contains("trust"))
+    }
+
+    @MainActor
+    private func copyStatusToClipboard() {
+        UIPasteboard.general.string = status
+        statusCopied = true
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            statusCopied = false
         }
     }
 
