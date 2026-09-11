@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 7.8.2 iOS26 Bootstrap Fix
+name: Build Pikmin Pilot Stage 7.8.3 Driver Channel Recovery
 
 on:
   workflow_dispatch:
@@ -110,7 +110,7 @@ jobs:
           mkdir RunnerPayload
           cp -R "$RUNNER_APP" RunnerPayload/
           mv RunnerPayload Payload
-          /usr/bin/zip -qry PikminPilotRunner-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilotRunner-Stage7.8.3-Driver-Channel-Recovery-unsigned.ipa Payload
           rm -rf Payload
 
       - name: Package IPA
@@ -119,17 +119,17 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
-          /usr/bin/zip -qry PikminPilot-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilot-Stage7.8.3-Driver-Channel-Recovery-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned
-          path: PikminPilot-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned.ipa
+          name: PikminPilot-Stage7.8.3-Driver-Channel-Recovery-unsigned
+          path: PikminPilot-Stage7.8.3-Driver-Channel-Recovery-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilotRunner-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned
+          name: PikminPilotRunner-Stage7.8.3-Driver-Channel-Recovery-unsigned
           path: |
-            PikminPilotRunner-Stage7.8.2-iOS26-Bootstrap-Fix-unsigned.ipa
+            PikminPilotRunner-Stage7.8.3-Driver-Channel-Recovery-unsigned.ipa
             RunnerBundleIdentifier.txt
             RunnerInfoPlist.txt
