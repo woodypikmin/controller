@@ -559,7 +559,7 @@ required = [
 missing = [name.decode() for name in required if name not in data]
 if missing:
     raise SystemExit("Missing Stage 7.8 export(s): " + ", ".join(missing))
-print("Stage 8.2.1 XCTest tap/swipe/select12/dispatchtail export set present.")
+print("Stage 8.2.2 XCTest tap/swipe/select12/dispatchtail export set present.")
 PY
 
 cp ffi/idevice.h "$HEADERS/idevice.h"
@@ -573,4 +573,4 @@ test -f "$OUT/Info.plist"
 test -f "$OUT/ios-arm64/libidevice_ffi.a"
 test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
-echo "Built Stage 8.2.1 DVT-to-XCTest Runner-handoff command set $OUT"
+echo "Built Stage 8.2.2 DVT-to-XCTest Runner-handoff command set $OUT"

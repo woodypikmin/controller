@@ -43,7 +43,7 @@ final class Stage8FullLoopController: ObservableObject {
         isRunning = true
 
         beginBackgroundWindow(label: "initial")
-        emit("STAGE 8.2.1 FULL LOOP START • Runner handoff + safe background expiration + fast critical tail • WDA=OFF")
+        emit("STAGE 8.2.2 FULL LOOP START • fresh pink after checkpoint + Runner handoff • WDA=OFF")
 
         worker = Task { [weak self] in
             guard let self else { return }
@@ -85,7 +85,7 @@ final class Stage8FullLoopController: ObservableObject {
         }
 
         backgroundTask = UIApplication.shared.beginBackgroundTask(
-            withName: "PikminPilot-Stage8.2.1-\(label)",
+            withName: "PikminPilot-Stage8.2.2-\(label)",
             expirationHandler: { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }
@@ -312,6 +312,17 @@ final class Stage8FullLoopController: ObservableObject {
         )
         await pause(2.0)
 
+        // Stage 8.2.2: refresh the finite background window BEFORE detecting
+        // pink. In 8.2.1 we detected pink first, then foregrounded Pilot. When
+        // Pikmin was activated again the selection screen could re-render, so
+        // the saved pink coordinate became stale and Runner tapped whatever was
+        // now under that old point. Do the foreground checkpoint first, return
+        // to Pikmin, and only then obtain a fresh DVT frame + fresh pink point.
+        try await prepareCriticalTailWindow(engine: engine, round: round)
+
+        emit("ROUND \(round) • returned to selection page • detect pink on fresh post-checkpoint frame")
+        await pause(0.28)
+
         emit("ROUND \(round) • force pink-filter row swipe")
         try await swipe(
             engine: engine,
@@ -322,20 +333,22 @@ final class Stage8FullLoopController: ObservableObject {
             duration: 0.38,
             stage: "pink-filter-row"
         )
-        await pause(0.62)
+        await pause(0.48)
 
         var pinkFound: (point: CGPoint, image: UIImage)?
         for attempt in 0...4 {
             try checkCancelled()
             try await ensureBackgroundBudget(engine: engine, stage: "pink-filter")
 
-            let image = try await capture(engine: engine, tag: "pink-filter")
+            let image = try await capture(engine: engine, tag: "pink-filter-fresh")
             screenshotSink?(image)
             if let point = ImageAutomationDetector.detectPinkFilter(in: image) {
                 pinkFound = (point, image)
+                emit("ROUND \(round) • pink filter detected on fresh frame ✅")
                 break
             }
 
+            emit("ROUND \(round) • pink filter miss attempt \(attempt + 1)/5")
             if attempt < 4 {
                 try await swipe(
                     engine: engine,
@@ -343,36 +356,27 @@ final class Stage8FullLoopController: ObservableObject {
                     fromY: 0.432,
                     toX: 0.43,
                     toY: 0.432,
-                    duration: 0.38,
+                    duration: 0.34,
                     stage: "pink-filter-retry"
                 )
-                await pause(0.55)
+                await pause(0.42)
             }
         }
 
         guard let pink = pinkFound else {
-            throw LoopError("Round \(round): pink filter not detected")
+            throw LoopError("Round \(round): pink filter not detected on fresh post-checkpoint frame")
         }
 
-        // Stage 8.2: the finite iOS background window is the actual bottleneck.
-        // Do NOT spend three more independent XCTest bootstraps on pink -> 12
-        // -> GO -> X. Pass the already DVT-detected pink coordinate into one
-        // Runner session. The Runner taps pink, selects 12 quickly, detects GO
-        // from XCUIScreen screenshots, taps it, confirms the calibrated green
-        // X, and closes it before returning control to Pikmin Pilot.
+        // Pass the coordinate from the *fresh* post-checkpoint screenshot into
+        // the single Runner session. There is deliberately no Pilot foreground
+        // bounce between this detection and dispatchtail.
         guard let pinkCG = pink.image.cgImage else {
             throw LoopError("Round \(round): pink screenshot has no CGImage")
         }
         let pinkX = Double(pink.point.x) / Double(pinkCG.width)
         let pinkY = Double(pink.point.y) / Double(pinkCG.height)
 
-        emit(String(format: "ROUND %d • ONE XCTest critical tail begin • pink=(%.4f,%.4f) • pink→12→GO→greenX", round, pinkX, pinkY))
-
-        // Always start the long Runner tail from a freshly foregrounded Pilot.
-        // This is cheaper than an extra XCTest activate session: CoreDevice
-        // foregrounds Pilot, we open a brand-new background task, and the
-        // dispatchtail Runner itself activates the already-running Pikmin app.
-        try await prepareCriticalTailWindow(engine: engine, round: round)
+        emit(String(format: "ROUND %d • ONE XCTest critical tail begin • fresh pink=(%.4f,%.4f) • pink→12→GO→greenX", round, pinkX, pinkY))
 
         let remaining = UIApplication.shared.backgroundTimeRemaining
         if remaining.isFinite {
@@ -393,7 +397,7 @@ final class Stage8FullLoopController: ObservableObject {
 
         emit("ROUND \(round) • ONE XCTest critical tail completed ✅ • pink→12→GO→greenX")
 
-        // Stage 8.2.1 Runner activates Pikmin Pilot after tapping the green X.
+        // Stage 8.2.2 Runner activates Pikmin Pilot after tapping the green X.
         // Accept that foreground handoff, start a fresh task, then reactivate
         // Pikmin for the next DVT fruit-list scan. This removes the dead zone
         // where Round 1 finished but Pilot was already suspended before Round 2.
@@ -429,7 +433,15 @@ final class Stage8FullLoopController: ObservableObject {
         }
 
         beginBackgroundWindow(label: "critical-tail-r\(round)")
-        emit("ROUND \(round) • fresh background task armed • dispatchtail will activate Pikmin")
+
+        // Return to the already-running game now, before any pink detection.
+        // This guarantees the DVT screenshot used for the pink coordinate is
+        // from the exact screen state Runner will act on.
+        let reactivate = await engine.runXCTestActivateOnly()
+        guard reactivate.ok else {
+            throw LoopError("phase=critical-tail-reactivate-pikmin • \(reactivate.message)")
+        }
+        emit("ROUND \(round) • fresh background task armed • Pikmin re-activated before pink detection ✅")
     }
 
     private func completeRunnerHandoff(
@@ -579,7 +591,7 @@ final class Stage8FullLoopController: ObservableObject {
     ) async throws -> UIImage {
         let safeTag = tag.replacingOccurrences(of: "/", with: "-")
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PikminPilot-Stage8.2.1-\(safeTag).png")
+            .appendingPathComponent("PikminPilot-Stage8.2.2-\(safeTag).png")
         try? FileManager.default.removeItem(at: url)
 
         let result = await engine.takeScreenshot(outputPath: url.path)

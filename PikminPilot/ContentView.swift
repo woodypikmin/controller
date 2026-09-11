@@ -20,7 +20,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 8.2.1 — RUNNER HANDOFF / BACKGROUND RECOVERY")
+                        Text("Stage 8.2.2 — FRESH PINK AFTER CHECKPOINT")
                             .font(.headline)
 
                         Text("Stage 8.0 已實機證明 DVT screenshot → card-first AVAILABLE → dynamic XCTest tap。8.1 直接串回完整 Stage 5：AVAILABLE → 前往探險 → 粉紅 → 固定 12 隻 → GO → 搬運中綠色 X → 回列表 → 下一個。全程 phone-local RSD + DVT + XCTest，不使用 WDA localhost:8100。")
@@ -135,7 +135,7 @@ struct ContentView: View {
                     }
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
 
-                    Button("STAGE 8.2.1 → START FULL LOOP") {
+                    Button("STAGE 8.2.2 → START FULL LOOP") {
                         startStage81Loop()
                     }
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
@@ -159,7 +159,7 @@ struct ContentView: View {
                     if busy || loop.isRunning {
                         HStack {
                             ProgressView()
-                            Text(loop.isRunning ? "Stage 8.2.1 自動搬運中…" : "idevice 正在連線…")
+                            Text(loop.isRunning ? "Stage 8.2.2 自動搬運中…" : "idevice 正在連線…")
                         }
                     }
                 }
@@ -177,8 +177,8 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 8.2.1 RUNNER HANDOFF") {
-                    Text("1. 開 LocalDevVPN。\n2. 先開 Pikmin Bloom，停在『探險水果列表』；不要 force quit。\n3. 回 Pikmin Pilot → CONNECT PHONE-LOCAL RSD。\n4. 按 STAGE 8.2.1 → START FULL LOOP。\n5. card-first：BUSY / COMPLETE 永遠不點，只選 AVAILABLE。\n6. 偵測到粉紅後，Pilot 先回前景建立全新的 background task，接著單一 XCTest session 快速完成『粉紅 → 12 → GO → 綠色 X』。\n7. 綠色 X 點完後 Runner 主動把 Pilot 帶回前景；Pilot 立即開下一個 background window，再 activate Pikmin 進 Round 2。\n8. expiration handler 現在會正確 endBackgroundTask，避免 iOS 因逾時 task 終止 Pilot process。\n9. Status 持久化；只有真的按 STOP 才會寫 STOPPED BY USER。")
+                Section("Stage 8.2.2 FRESH PINK") {
+                    Text("1. 開 LocalDevVPN。\n2. 先開 Pikmin Bloom，停在『探險水果列表』；不要 force quit。\n3. 回 Pikmin Pilot → CONNECT PHONE-LOCAL RSD。\n4. 按 STAGE 8.2.2 → START FULL LOOP。\n5. card-first：BUSY / COMPLETE 永遠不點，只選 AVAILABLE。\n6. 偵測到粉紅後，Pilot 先回前景建立全新的 background task，接著單一 XCTest session 快速完成『粉紅 → 12 → GO → 綠色 X』。\n7. 綠色 X 點完後 Runner 主動把 Pilot 帶回前景；Pilot 立即開下一個 background window，再 activate Pikmin 進 Round 2。\n8. expiration handler 現在會正確 endBackgroundTask，避免 iOS 因逾時 task 終止 Pilot process。\n9. Status 持久化；只有真的按 STOP 才會寫 STOPPED BY USER。")
                 }
 
                 Section("Bot Core") {
@@ -190,7 +190,7 @@ struct ContentView: View {
                     Label("Stage 7.6：real XCUITest Runner package + discovery ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 8.2.1：fresh background window + fast tail + Runner→Pilot handoff", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Stage 8.2.2：checkpoint → 回 Pikmin → fresh pink detect → single tail", systemImage: "arrow.triangle.2.circlepath")
                 }
             }
             .navigationTitle("Pikmin Pilot")

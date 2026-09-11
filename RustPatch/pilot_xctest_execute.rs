@@ -1,4 +1,4 @@
-// Pikmin Pilot Stage 8.2.1
+// Pikmin Pilot Stage 8.2.2
 // Command-driven XCTest execution over the existing phone-local RSD transport.
 // No WDA HTTP transport. Commands are passed to the signed XCTest Runner via
 // runner launch environment, allowing DVT screenshot decisions to dispatch
@@ -75,7 +75,7 @@ async fn run_command(
     }
 
     // Sideloadly may rewrite the main app bundle identifier, so discover the
-    // installed Pikmin Pilot host dynamically. Stage 8.2.1 passes this to the
+    // installed Pikmin Pilot host dynamically. Stage 8.2.2 passes this to the
     // Runner so the test can explicitly hand foreground control back to Pilot
     // after tapping the carrying green X.
     let host_id = apps.keys()
