@@ -40,3 +40,26 @@ int32_t PPPhoneDrag(
 #ifdef __cplusplus
 }
 #endif
+
+
+int32_t PPLaunchAndTapPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x,
+    uint16_t y,
+    char *message,
+    size_t messageCapacity
+);
+
+int32_t PPLaunchAndDragPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t x2,
+    uint16_t y2,
+    char *message,
+    size_t messageCapacity
+);

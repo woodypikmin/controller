@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.3.2 needs the newer CoreDevice display/HID implementation.
+# Stage 7.3.3 needs the newer CoreDevice display/HID implementation.
 # Pin the exact upstream commit seen in idevice CI on 2026-09-11.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
@@ -24,7 +24,7 @@ cp "$ROOT/RustPatch/pilot_hid.rs" ffi/src/pilot_hid.rs
 # Register our two internal modules in idevice-ffi.
 cat >> ffi/src/lib.rs <<'RUST'
 
-// Pikmin Pilot Stage 7.3.2 additions. No WDA transport is used here.
+// Pikmin Pilot Stage 7.3.3 additions. No WDA transport is used here.
 mod pilot_coredevice_stream;
 mod pilot_hid;
 
@@ -101,7 +101,7 @@ ls -lh "$LIB"
 # Xcode 26.6's Apple nm cannot parse LLVM 22 bitcode metadata emitted by
 # Rust 1.98, so do a format-agnostic raw archive check instead. The exported
 # C ABI names are stored plainly in the Mach-O/archive symbol/string tables.
-echo "Checking Stage 7.3.2 HID exports in $LIB without Apple nm ..."
+echo "Checking Stage 7.3.3 HID exports in $LIB without Apple nm ..."
 python3 - "$LIB" <<'PY'
 from pathlib import Path
 import sys
@@ -130,4 +130,4 @@ test -f "$OUT/Info.plist"
 test -f "$OUT/ios-arm64/libidevice_ffi.a"
 test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
-echo "Built Stage 7.3.2 HID-enabled $OUT"
+echo "Built Stage 7.3.3 HID-enabled $OUT"

@@ -29,6 +29,7 @@ extern int32_t pilot_hid_drag_rsd(
 #import <arpa/inet.h>
 #import <netinet/in.h>
 #import <sys/socket.h>
+#import <unistd.h>
 
 static void PPWriteMessage(char *message, size_t capacity, NSString *text) {
     if (message == NULL || capacity == 0) {
@@ -589,6 +590,171 @@ int32_t PPPhoneDrag(
     if (tunnelResult != 0) {
         return tunnelResult;
     }
+
+    int32_t result = pilot_hid_drag_rsd(
+        adapter,
+        handshake,
+        x1,
+        y1,
+        x2,
+        y2,
+        message,
+        messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+
+static int32_t PPLaunchPikminOnExistingRSD(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AppServiceHandle *appService = NULL;
+    struct IdeviceFfiError *connectError =
+        app_service_connect_rsd(adapter, handshake, &appService);
+
+    if (connectError != NULL) {
+        return PPConsumeError(
+            connectError,
+            message,
+            messageCapacity,
+            @"AppService connect failed before HID"
+        );
+    }
+
+    struct LaunchResponseC *response = NULL;
+    struct IdeviceFfiError *launchError =
+        app_service_launch_app(
+            appService,
+            "com.nianticlabs.pikmin",
+            NULL,
+            0,
+            0,
+            0,
+            NULL,
+            &response
+        );
+
+    if (launchError != NULL) {
+        app_service_free(appService);
+        return PPConsumeError(
+            launchError,
+            message,
+            messageCapacity,
+            @"Pikmin launch failed before HID"
+        );
+    }
+
+    if (response != NULL) {
+        app_service_free_launch_response(response);
+    }
+    app_service_free(appService);
+    return 0;
+}
+
+int32_t PPLaunchAndTapPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x,
+    uint16_t y,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath,
+        host,
+        port,
+        &adapter,
+        &handshake,
+        message,
+        messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t launchResult =
+        PPLaunchPikminOnExistingRSD(
+            adapter,
+            handshake,
+            message,
+            messageCapacity
+        );
+
+    if (launchResult != 0) {
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        return launchResult;
+    }
+
+    // Pikmin must be the current foreground target before dtuhidd posts input.
+    usleep(1500 * 1000);
+
+    int32_t result = pilot_hid_tap_rsd(
+        adapter,
+        handshake,
+        x,
+        y,
+        message,
+        messageCapacity
+    );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+int32_t PPLaunchAndDragPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t x2,
+    uint16_t y2,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath,
+        host,
+        port,
+        &adapter,
+        &handshake,
+        message,
+        messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t launchResult =
+        PPLaunchPikminOnExistingRSD(
+            adapter,
+            handshake,
+            message,
+            messageCapacity
+        );
+
+    if (launchResult != 0) {
+        rsd_handshake_free(handshake);
+        adapter_free(adapter);
+        return launchResult;
+    }
+
+    usleep(1500 * 1000);
 
     int32_t result = pilot_hid_drag_rsd(
         adapter,

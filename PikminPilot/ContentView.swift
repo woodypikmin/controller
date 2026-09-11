@@ -56,18 +56,18 @@ struct ContentView: View {
                     }
                 }
 
-                Section("3. Stage 7.3.1 HID Test") {
-                    Button("PHONE-LOCAL → TAP CENTER") {
-                        Task { await tapCenter() }
+                Section("3. Stage 7.3.3 Foreground HID Test") {
+                    Button("PHONE-LOCAL → LAUNCH + TAP CENTER") {
+                        Task { await launchAndTapCenter() }
                     }
                     .disabled(busy || pairing.pairingURL == nil)
 
-                    Button("PHONE-LOCAL → SWIPE UP") {
-                        Task { await swipeUp() }
+                    Button("PHONE-LOCAL → LAUNCH + SWIPE UP") {
+                        Task { await launchAndSwipeUp() }
                     }
                     .disabled(busy || pairing.pairingURL == nil)
 
-                    Text("TAP CENTER = 正中央 (32768,32768)。SWIPE UP = 從畫面中央偏下往中央偏上拖約 0.6 秒。請先把 Pikmin Bloom 留在一個容易看出反應的畫面再測。")
+                    Text("這版會先自動把 Pikmin Bloom 切到前景，1.5 秒後再送 HID。座標使用這台 iPhone 的 UIScreen point 座標。SWIPE 測試前，先讓 Pikmin Bloom 停在可上下捲動的畫面。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -81,14 +81,14 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 7.3.1 測試順序") {
-                    Text("1. 開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. LAUNCH PIKMIN。\n4. 切到 Pikmin Bloom，停在可看出滑動/點擊的畫面。\n5. 回 Pikmin Pilot 按 TAP CENTER 或 SWIPE UP。\n6. Pikmin Pilot 會透過 phone-local RSD → display auth gate → UniversalHID 送事件。\n7. 告訴我遊戲是否真的有被點/滑，以及狀態文字。")
+                Section("Stage 7.3.3 測試順序") {
+                    Text("1. 開 LocalDevVPN。\n2. 先在 Pikmin Bloom 停在容易驗證點擊/滑動的畫面。\n3. 回 Pikmin Pilot。\n4. 按 LAUNCH + TAP CENTER 或 LAUNCH + SWIPE UP。\n5. Pilot 會自動把 Pikmin 切到前景，等待 1.5 秒，再用 display auth gate → UniversalHID 送事件。\n6. 約 2–3 秒後看 Pikmin 畫面是否真的有反應。\n7. 回 Pilot 時把狀態文字告訴我，尤其是 surface= 後面的值。")
                 }
 
                 Section("Bot Core") {
                     Label("RPPairing / RSD / Launch：實機成功", systemImage: "checkmark.circle.fill")
                     Label("DVT Screenshot：實機成功", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.3.1：UniversalHID tap/swipe probe", systemImage: "hand.tap.fill")
+                    Label("Stage 7.3.3：foreground + real screen coordinates + UniversalHID", systemImage: "hand.tap.fill")
                     Label("下一關：把 Stage 5 card-first + 12 粉紅 + GO + X + LOOP 搬入", systemImage: "arrow.forward.circle")
                 }
             }
@@ -126,12 +126,56 @@ struct ContentView: View {
     @MainActor private func validatePairing() async { await withEngine { await $0.validatePairing() } }
     @MainActor private func connectRSD() async { await withEngine { await $0.probeRSD() } }
     @MainActor private func launchPikmin() async { await withEngine { await $0.launchPikmin() } }
-    @MainActor private func tapCenter() async { await withEngine { await $0.tap(x: 32768, y: 32768) } }
+    @MainActor private func launchAndTapCenter() async {
+        guard let url = pairing.pairingURL else { return }
+        busy = true
+        defer { busy = false }
 
-    @MainActor private func swipeUp() async {
-        await withEngine {
-            await $0.drag(x1: 32768, y1: 48000, x2: 32768, y2: 18000)
+        let bounds = UIScreen.main.bounds
+        let x = UInt16(clamping: Int(bounds.midX.rounded()))
+        let y = UInt16(clamping: Int(bounds.midY.rounded()))
+
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(
+            withName: "PikminPilot-HID-Tap",
+            expirationHandler: nil
+        )
+        defer {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+            }
         }
+
+        let result = await IDeviceEngine(pairingPath: url.path)
+            .launchAndTapPikmin(x: x, y: y)
+        status = result.message
+    }
+
+    @MainActor private func launchAndSwipeUp() async {
+        guard let url = pairing.pairingURL else { return }
+        busy = true
+        defer { busy = false }
+
+        let bounds = UIScreen.main.bounds
+        let x = UInt16(clamping: Int(bounds.midX.rounded()))
+        let y1 = UInt16(clamping: Int((bounds.height * 0.72).rounded()))
+        let y2 = UInt16(clamping: Int((bounds.height * 0.30).rounded()))
+
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(
+            withName: "PikminPilot-HID-Swipe",
+            expirationHandler: nil
+        )
+        defer {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+            }
+        }
+
+        let result = await IDeviceEngine(pairingPath: url.path)
+            .launchAndDragPikmin(
+                x1: x, y1: y1,
+                x2: x, y2: y2
+            )
+        status = result.message
     }
 
     @MainActor private func takeScreenshot() async {
@@ -139,7 +183,7 @@ struct ContentView: View {
         busy = true
         defer { busy = false }
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PikminPilot-Stage7.3.1-Screenshot.png")
+            .appendingPathComponent("PikminPilot-Stage7.3.3-Screenshot.png")
         try? FileManager.default.removeItem(at: outputURL)
         let result = await IDeviceEngine(pairingPath: url.path).takeScreenshot(outputPath: outputURL.path)
         status = result.message

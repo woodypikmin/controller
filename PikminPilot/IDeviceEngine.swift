@@ -60,6 +60,33 @@ actor IDeviceEngine {
         }
     }
 
+    func launchAndTapPikmin(x: UInt16, y: UInt16) -> Result {
+        callBridge { path, message, capacity in
+            host.withCString {
+                PPLaunchAndTapPikmin(
+                    path, $0, port,
+                    x, y,
+                    message, capacity
+                )
+            }
+        }
+    }
+
+    func launchAndDragPikmin(
+        x1: UInt16, y1: UInt16,
+        x2: UInt16, y2: UInt16
+    ) -> Result {
+        callBridge { path, message, capacity in
+            host.withCString {
+                PPLaunchAndDragPikmin(
+                    path, $0, port,
+                    x1, y1, x2, y2,
+                    message, capacity
+                )
+            }
+        }
+    }
+
     private func callBridge(
         _ body: (UnsafePointer<CChar>, UnsafeMutablePointer<CChar>, Int) -> Int32
     ) -> Result {
