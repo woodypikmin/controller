@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.8: execute a real XCUITest over the already-proven phone-local RSD tunnel.
+# Stage 7.8.2: execute a real XCUITest over the already-proven phone-local RSD tunnel.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
@@ -14,6 +14,41 @@ mkdir -p "$ROOT/.build" "$HEADERS"
 git clone https://github.com/jkcoxson/idevice.git "$CACHE"
 cd "$CACHE"
 git checkout "$PIN"
+
+# Stage 7.8.2: upstream idevice guesses that every XCTest bootstrap NSError
+# with numeric code 103 means an untrusted developer certificate. That guess
+# is not safe without the NSError domain. Replace it with raw archive string
+# extraction so the phone can display Apple's actual domain/description text.
+python3 - <<'PY_BOOTERR'
+from pathlib import Path
+p = Path("idevice/src/services/dvt/xctest/mod.rs")
+s = p.read_text()
+old = """                        // Fall back to the numeric code with a hint for
+                        // the most common values seen from testmanagerd
+                        if let Some(code) = d.get("NSCode").and_then(|v| v.as_signed_integer()) {
+                            let hint = match code {
+                                103 => " (untrusted developer certificate — go to Settings → General → VPN & Device Management and trust your developer app)",
+                                _ => "",
+                            };
+                            return Some(format!("NSError code {code}{hint}"));
+                        }
+"""
+new = """                        // Preserve the numeric code but do not guess its meaning
+                        // without the NSError domain. The raw NSKeyedArchive still
+                        // contains the useful domain/description/underlying-error strings.
+                        if let Some(code) = d.get("NSCode").and_then(|v| v.as_signed_integer()) {
+                            let archive = pilot_bootstrap_archive_strings(v);
+                            if archive.is_empty() {
+                                return Some(format!("NSError code {code}"));
+                            }
+                            return Some(format!("NSError code {code} • archiveStrings={archive}"));
+                        }
+"""
+if old not in s:
+    raise SystemExit("Stage 7.8.2 bootstrap NSError patch target not found")
+s = s.replace(old, new, 1)
+p.write_text(s)
+PY_BOOTERR
 
 # The public idevice xctest orchestrator internally already contains the correct
 # iOS 17+ RSD DTX handshake logic, but its low-level rsd_connect helper is private.
@@ -87,6 +122,62 @@ RUST
 # module so it can reuse the exact private orchestration primitives while using
 # Pikmin Pilot's already-established phone-local Adapter/RSD handles.
 cat >> idevice/src/services/dvt/xctest/mod.rs <<'RUST'
+
+// Stage 7.8.2 bootstrap diagnostics. The decoded NSError sometimes exposes
+// only NSCode; its raw NSKeyedArchive still carries human-readable strings.
+fn pilot_collect_plist_strings(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) => {
+            let text = text.trim();
+            if !text.is_empty() && text != "$null" && text.len() <= 512 {
+                out.push(text.to_owned());
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                pilot_collect_plist_strings(value, out);
+            }
+        }
+        Value::Dictionary(dict) => {
+            for value in dict.values() {
+                pilot_collect_plist_strings(value, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn pilot_bootstrap_archive_strings(aux: &AuxValue) -> String {
+    let AuxValue::Array(bytes) = aux else {
+        return String::new();
+    };
+    let Ok(raw) = Value::from_reader(std::io::Cursor::new(bytes.as_slice())) else {
+        return String::new();
+    };
+
+    let mut values = Vec::new();
+    pilot_collect_plist_strings(&raw, &mut values);
+
+    let mut unique: Vec<String> = Vec::new();
+    for value in values {
+        if matches!(
+            value.as_str(),
+            "$archiver" | "$version" | "$objects" | "$top" | "$class" | "$classes" | "$classname"
+        ) {
+            continue;
+        }
+        if value.starts_with("NSKeyedArchiver") || value == "NSError" || value == "NSObject" {
+            continue;
+        }
+        if !unique.iter().any(|existing| existing == &value) {
+            unique.push(value);
+        }
+        if unique.len() >= 24 {
+            break;
+        }
+    }
+    unique.join(" | ")
+}
 
 struct PilotNoopXCTestListener;
 impl XCUITestListener for PilotNoopXCTestListener {}
@@ -176,7 +267,7 @@ pub async fn pilot_run_existing_rsd_xctest(
     .map_err(|e| format!("step=initialize-xctest-session • {e:?}"))?;
 
     let config_name = cfg.config_name().to_owned();
-    let (launch_args, launch_env, launch_options) = build_launch_env(
+    let (launch_args, mut launch_env, launch_options) = build_launch_env(
         ios_major_version,
         &session_id,
         &cfg.runner_app_path,
@@ -186,6 +277,27 @@ pub async fn pilot_run_existing_rsd_xctest(
         cfg.runner_env.as_ref(),
         cfg.runner_args.as_deref(),
     );
+
+    // iOS 17+/26 runner environment cleanup. These are direct environment
+    // values (not a shell), so use explicit absolute DYLD paths and do not
+    // inject the obsolete /Developer main-thread-checker dylib on modern iOS.
+    if ios_major_version >= 17 {
+        launch_env.insert(
+            "DYLD_FRAMEWORK_PATH".to_owned(),
+            Value::String(format!(
+                "{}/Frameworks:/System/Developer/Library/Frameworks:",
+                cfg.runner_app_path
+            )),
+        );
+        launch_env.insert(
+            "DYLD_LIBRARY_PATH".to_owned(),
+            Value::String(format!(
+                "{}/Frameworks:/System/Developer/usr/lib",
+                cfg.runner_app_path
+            )),
+        );
+        launch_env.remove("DYLD_INSERT_LIBRARIES");
+    }
 
     let pid = launch_and_authorize_test_runner(
         &mut ctrl_proxy,
@@ -212,7 +324,7 @@ pub async fn pilot_run_existing_rsd_xctest(
         timeout,
     )
     .await
-    .map_err(|e| format!("step=execute-test-plan • {e:?}"))?;
+    .map_err(|e| format!("step=execute-test-plan • runner-pid={pid} • driver=ready • {e:?}"))?;
 
     Ok(pid)
 }

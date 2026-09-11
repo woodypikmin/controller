@@ -19,7 +19,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.8.1 — XCTEST CENTER TAP + COPY STATUS")
+                        Text("Stage 7.8.2 — XCTEST iOS 26 BOOTSTRAP FIX")
                             .font(.headline)
 
                         Text("沿用已實機成功的 phone-local RSD、InstallationProxy、DTX bootstrap 與 Runner。這版把真正 XCTest lifecycle 串起來：TestConfig → testmanagerd ctrl/main → ProcessControl launch/authorize → XCTestDriverInterface → start test plan → testTapPikminCenter()。不使用 WDA localhost:8100。")
@@ -76,9 +76,9 @@ struct ContentView: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        if isRunnerTrustFailure {
+                        if isBootstrapFailure {
                             Label {
-                                Text("這是 Runner 的 Developer App Certificate 信任/驗證失敗，不是 RSD pairing 或 DTX handshake 失敗。先關 LocalDevVPN，到 設定 → 一般 → VPN 與裝置管理，對目前簽 Runner 的 Developer App 執行 Trust / Verify；完成後再開 LocalDevVPN 重試。")
+                                Text("這次不是再把 Code 103 當成憑證未信任。7.8.2 會把 Apple 傳回的 bootstrap NSError 原始 archive 字串一起顯示，並修正 iOS 26 Runner 的 DYLD 啟動環境。若仍失敗，直接 COPY STATUS 貼回來。")
                                     .font(.footnote)
                             } icon: {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -194,11 +194,11 @@ struct ContentView: View {
     }
 
 
-    private var isRunnerTrustFailure: Bool {
+    private var isBootstrapFailure: Bool {
         let lower = status.lowercased()
-        return lower.contains("untrusted developer")
-            || lower.contains("developer app certificate")
-            || (lower.contains("code 103") && lower.contains("trust"))
+        return lower.contains("test runner failed to bootstrap")
+            || lower.contains("step=execute-test-plan")
+            || lower.contains("archiveStrings=")
     }
 
     @MainActor

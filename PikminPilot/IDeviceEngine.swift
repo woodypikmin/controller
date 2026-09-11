@@ -154,7 +154,7 @@ actor IDeviceEngine {
             Int
         ) -> Int32
     ) -> Result {
-        let capacity = 2048
+        let capacity = 8192
         let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: capacity)
         buffer.initialize(repeating: 0, count: capacity)
         defer { buffer.deallocate() }
