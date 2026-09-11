@@ -15,7 +15,6 @@ use idevice::core_device::hid::{
 };
 
 use crate::core_device_proxy::AdapterHandle;
-use crate::pilot_coredevice_stream::start_screen_media_stream;
 use crate::rsd::RsdHandshakeHandle;
 use crate::run_sync_local;
 
@@ -95,56 +94,43 @@ async fn tap_impl(
     x: u16,
     y: u16,
 ) -> Result<String, String> {
-    let mut session = start_screen_media_stream(adapter, handshake, 1).await?;
-    let _audio_udp = session.audio_udp;
-    let _video_udp = session.video_udp;
+    // iOS 26 probe: do NOT require displayservice. Some iOS 26 builds advertise
+    // UniversalHID but not the newer displayservice used by Device Hub/iOS 27.
+    // This is intentionally a probe: upstream documents that events may be
+    // accepted by dtuhidd yet dropped without the display authentication gate.
+    let mut hid = UniversalHidServiceClient::connect_rsd(adapter, handshake)
+        .await
+        .map_err(|e| format!("UniversalHID connect failed: {e:?}"))?;
 
+    let (service_id, surfaces) = resolve_touchscreen_surface(&mut hid).await?;
+
+    send_touch_sample(
+        &mut hid,
+        service_id,
+        TOUCHSCREEN_STATE_CONTACT,
+        x,
+        y,
+    )
+    .await?;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    send_touch_sample(
+        &mut hid,
+        service_id,
+        TOUCHSCREEN_STATE_RELEASE,
+        x,
+        y,
+    )
+    .await?;
+
+    // One-shot dtuhidd clients need time to consume queued reports before the
+    // service/tunnel gets torn down.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let gesture_result = async {
-        let mut hid = UniversalHidServiceClient::connect_rsd(adapter, handshake)
-            .await
-            .map_err(|e| format!("UniversalHID connect failed: {e:?}"))?;
-
-        let (service_id, surfaces) = resolve_touchscreen_surface(&mut hid).await?;
-
-        send_touch_sample(
-            &mut hid,
-            service_id,
-            TOUCHSCREEN_STATE_CONTACT,
-            x,
-            y,
-        )
-        .await?;
-
-        tokio::time::sleep(Duration::from_millis(90)).await;
-
-        send_touch_sample(
-            &mut hid,
-            service_id,
-            TOUCHSCREEN_STATE_RELEASE,
-            x,
-            y,
-        )
-        .await?;
-
-        Ok::<String, String>(format!(
-            "PHONE-LOCAL HID TAP SENT • screen={x},{y} • surface={service_id} • {surfaces}"
-        ))
-    }
-    .await;
-
-    tokio::time::sleep(Duration::from_millis(250)).await;
-
-    let stop_result = session
-        .client
-        .stop_media_stream()
-        .await
-        .map_err(|e| format!("display stream stop failed: {e:?}"));
-
-    let detail = gesture_result?;
-    stop_result?;
-    Ok(detail)
+    Ok(format!(
+        "iOS26 DIRECT HID TAP SENT • NO DISPLAY GATE • screen={x},{y} • surface={service_id} • {surfaces}"
+    ))
 }
 
 async fn drag_impl(
@@ -155,70 +141,51 @@ async fn drag_impl(
     x2: u16,
     y2: u16,
 ) -> Result<String, String> {
-    let mut session = start_screen_media_stream(adapter, handshake, 1).await?;
-    let _audio_udp = session.audio_udp;
-    let _video_udp = session.video_udp;
+    let mut hid = UniversalHidServiceClient::connect_rsd(adapter, handshake)
+        .await
+        .map_err(|e| format!("UniversalHID connect failed: {e:?}"))?;
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (service_id, surfaces) = resolve_touchscreen_surface(&mut hid).await?;
 
-    let gesture_result = async {
-        let mut hid = UniversalHidServiceClient::connect_rsd(adapter, handshake)
-            .await
-            .map_err(|e| format!("UniversalHID connect failed: {e:?}"))?;
-
-        let (service_id, surfaces) = resolve_touchscreen_surface(&mut hid).await?;
-
-        let steps: u32 = 36;
-        for i in 0..steps {
-            let t = i as f64 / steps as f64;
-            let x = (x1 as f64 + (x2 as f64 - x1 as f64) * t).round() as u16;
-            let y = (y1 as f64 + (y2 as f64 - y1 as f64) * t).round() as u16;
-            send_touch_sample(
-                &mut hid,
-                service_id,
-                TOUCHSCREEN_STATE_CONTACT,
-                x,
-                y,
-            )
-            .await?;
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-
+    let steps: u32 = 40;
+    for i in 0..steps {
+        let t = i as f64 / steps as f64;
+        let x = (x1 as f64 + (x2 as f64 - x1 as f64) * t).round() as u16;
+        let y = (y1 as f64 + (y2 as f64 - y1 as f64) * t).round() as u16;
         send_touch_sample(
             &mut hid,
             service_id,
             TOUCHSCREEN_STATE_CONTACT,
-            x2,
-            y2,
+            x,
+            y,
         )
         .await?;
-        tokio::time::sleep(Duration::from_millis(25)).await;
-        send_touch_sample(
-            &mut hid,
-            service_id,
-            TOUCHSCREEN_STATE_RELEASE,
-            x2,
-            y2,
-        )
-        .await?;
-
-        Ok::<String, String>(format!(
-            "PHONE-LOCAL HID SWIPE SENT • {x1},{y1}->{x2},{y2} • surface={service_id} • {surfaces}"
-        ))
+        tokio::time::sleep(Duration::from_millis(18)).await;
     }
-    .await;
 
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    send_touch_sample(
+        &mut hid,
+        service_id,
+        TOUCHSCREEN_STATE_CONTACT,
+        x2,
+        y2,
+    )
+    .await?;
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    send_touch_sample(
+        &mut hid,
+        service_id,
+        TOUCHSCREEN_STATE_RELEASE,
+        x2,
+        y2,
+    )
+    .await?;
 
-    let stop_result = session
-        .client
-        .stop_media_stream()
-        .await
-        .map_err(|e| format!("display stream stop failed: {e:?}"));
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let detail = gesture_result?;
-    stop_result?;
-    Ok(detail)
+    Ok(format!(
+        "iOS26 DIRECT HID SWIPE SENT • NO DISPLAY GATE • {x1},{y1}->{x2},{y2} • surface={service_id} • {surfaces}"
+    ))
 }
 
 /// Internal implementation called by the crate-root C ABI wrapper.

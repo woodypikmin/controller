@@ -56,7 +56,7 @@ struct ContentView: View {
                     }
                 }
 
-                Section("3. Stage 7.3.3 Foreground HID Test") {
+                Section("3. Stage 7.3.4 iOS 26 Direct HID Probe") {
                     Button("PHONE-LOCAL → LAUNCH + TAP CENTER") {
                         Task { await launchAndTapCenter() }
                     }
@@ -67,7 +67,7 @@ struct ContentView: View {
                     }
                     .disabled(busy || pairing.pairingURL == nil)
 
-                    Text("這版會先自動把 Pikmin Bloom 切到前景，1.5 秒後再送 HID。座標使用這台 iPhone 的 UIScreen point 座標。SWIPE 測試前，先讓 Pikmin Bloom 停在可上下捲動的畫面。")
+                    Text("iOS 26.6.1 沒有目前 Device Hub 路線需要的 displayservice。這版只做最後的 direct-HID probe：先自動切 Pikmin 到前景，再用正確 UIScreen 座標直接送 UniversalHID，不啟動 display gate。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -81,14 +81,14 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 7.3.3 測試順序") {
+                Section("Stage 7.3.4 測試順序") {
                     Text("1. 開 LocalDevVPN。\n2. 先在 Pikmin Bloom 停在容易驗證點擊/滑動的畫面。\n3. 回 Pikmin Pilot。\n4. 按 LAUNCH + TAP CENTER 或 LAUNCH + SWIPE UP。\n5. Pilot 會自動把 Pikmin 切到前景，等待 1.5 秒，再用 display auth gate → UniversalHID 送事件。\n6. 約 2–3 秒後看 Pikmin 畫面是否真的有反應。\n7. 回 Pilot 時把狀態文字告訴我，尤其是 surface= 後面的值。")
                 }
 
                 Section("Bot Core") {
                     Label("RPPairing / RSD / Launch：實機成功", systemImage: "checkmark.circle.fill")
                     Label("DVT Screenshot：實機成功", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.3.3：foreground + real screen coordinates + UniversalHID", systemImage: "hand.tap.fill")
+                    Label("Stage 7.3.4：iOS 26 direct UniversalHID probe (no display gate)", systemImage: "hand.tap.fill")
                     Label("下一關：把 Stage 5 card-first + 12 粉紅 + GO + X + LOOP 搬入", systemImage: "arrow.forward.circle")
                 }
             }
@@ -183,7 +183,7 @@ struct ContentView: View {
         busy = true
         defer { busy = false }
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PikminPilot-Stage7.3.3-Screenshot.png")
+            .appendingPathComponent("PikminPilot-Stage7.3.4-Screenshot.png")
         try? FileManager.default.removeItem(at: outputURL)
         let result = await IDeviceEngine(pairingPath: url.path).takeScreenshot(outputPath: outputURL.path)
         status = result.message
