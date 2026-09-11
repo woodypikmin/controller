@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 7.6.1
+name: Build Pikmin Pilot Stage 7.6.2
 
 on:
   workflow_dispatch:
@@ -31,78 +31,13 @@ jobs:
 
       - name: Generate project
         run: xcodegen generate
-      - name: Generate deterministic shared XCUITest scheme
-        run: |
-          set -euxo pipefail
-          python3 - <<'PYSCHEME'
-          from pathlib import Path
-          import re
-
-          pbx = Path("PikminPilot.xcodeproj/project.pbxproj").read_text()
-
-          def target_uuid(name: str) -> str:
-              pattern = re.compile(
-                  rf'([A-F0-9]{{24}}) /\\* {re.escape(name)} \\*/ = \\{{\\s*isa = PBXNativeTarget;',
-                  re.S,
-              )
-              m = pattern.search(pbx)
-              if not m:
-                  raise SystemExit(f"Could not find PBXNativeTarget UUID for {name}")
-              return m.group(1)
-
-          app_uuid = target_uuid("PikminPilot")
-          test_uuid = target_uuid("PikminPilotRunnerUITests")
-
-          scheme_dir = Path("PikminPilot.xcodeproj/xcshareddata/xcschemes")
-          scheme_dir.mkdir(parents=True, exist_ok=True)
-
-          scheme = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-          <Scheme LastUpgradeVersion=\"2660\" version=\"1.7\">
-             <BuildAction parallelizeBuildables=\"YES\" buildImplicitDependencies=\"YES\">
-                <BuildActionEntries>
-                   <BuildActionEntry buildForTesting=\"YES\" buildForRunning=\"YES\" buildForProfiling=\"YES\" buildForArchiving=\"YES\" buildForAnalyzing=\"YES\">
-                      <BuildableReference BuildableIdentifier=\"primary\" BlueprintIdentifier=\"{app_uuid}\" BuildableName=\"PikminPilot.app\" BlueprintName=\"PikminPilot\" ReferencedContainer=\"container:PikminPilot.xcodeproj\"/>
-                   </BuildActionEntry>
-                   <BuildActionEntry buildForTesting=\"YES\" buildForRunning=\"NO\" buildForProfiling=\"NO\" buildForArchiving=\"NO\" buildForAnalyzing=\"NO\">
-                      <BuildableReference BuildableIdentifier=\"primary\" BlueprintIdentifier=\"{test_uuid}\" BuildableName=\"PikminPilotRunnerUITests.xctest\" BlueprintName=\"PikminPilotRunnerUITests\" ReferencedContainer=\"container:PikminPilot.xcodeproj\"/>
-                   </BuildActionEntry>
-                </BuildActionEntries>
-             </BuildAction>
-             <TestAction buildConfiguration=\"Release\" selectedDebuggerIdentifier=\"Xcode.DebuggerFoundation.Debugger.LLDB\" selectedLauncherIdentifier=\"Xcode.DebuggerFoundation.Launcher.LLDB\" shouldUseLaunchSchemeArgsEnv=\"YES\">
-                <Testables>
-                   <TestableReference skipped=\"NO\" parallelizable=\"NO\">
-                      <BuildableReference BuildableIdentifier=\"primary\" BlueprintIdentifier=\"{test_uuid}\" BuildableName=\"PikminPilotRunnerUITests.xctest\" BlueprintName=\"PikminPilotRunnerUITests\" ReferencedContainer=\"container:PikminPilot.xcodeproj\"/>
-                   </TestableReference>
-                </Testables>
-             </TestAction>
-             <LaunchAction buildConfiguration=\"Release\" selectedDebuggerIdentifier=\"Xcode.DebuggerFoundation.Debugger.LLDB\" selectedLauncherIdentifier=\"Xcode.DebuggerFoundation.Launcher.LLDB\" launchStyle=\"0\" useCustomWorkingDirectory=\"NO\" ignoresPersistentStateOnLaunch=\"NO\" debugDocumentVersioning=\"YES\" debugServiceExtension=\"internal\" allowLocationSimulation=\"YES\">
-                <BuildableProductRunnable runnableDebuggingMode=\"0\">
-                   <BuildableReference BuildableIdentifier=\"primary\" BlueprintIdentifier=\"{app_uuid}\" BuildableName=\"PikminPilot.app\" BlueprintName=\"PikminPilot\" ReferencedContainer=\"container:PikminPilot.xcodeproj\"/>
-                </BuildableProductRunnable>
-             </LaunchAction>
-             <ProfileAction buildConfiguration=\"Release\" shouldUseLaunchSchemeArgsEnv=\"YES\" savedToolIdentifier=\"\" useCustomWorkingDirectory=\"NO\" debugDocumentVersioning=\"YES\">
-                <BuildableProductRunnable runnableDebuggingMode=\"0\">
-                   <BuildableReference BuildableIdentifier=\"primary\" BlueprintIdentifier=\"{app_uuid}\" BuildableName=\"PikminPilot.app\" BlueprintName=\"PikminPilot\" ReferencedContainer=\"container:PikminPilot.xcodeproj\"/>
-                </BuildableProductRunnable>
-             </ProfileAction>
-             <AnalyzeAction buildConfiguration=\"Release\"/>
-             <ArchiveAction buildConfiguration=\"Release\" revealArchiveInOrganizer=\"YES\"/>
-          </Scheme>
-          """
-
-          out = scheme_dir / "PikminPilotRunnerUITests.xcscheme"
-          out.write_text(scheme)
-          print(f"Wrote {out}")
-          print(f"App UUID: {app_uuid}")
-          print(f"Test UUID: {test_uuid}")
-          PYSCHEME
-
-      - name: Verify Xcode targets and schemes
+      - name: Verify generated app scheme includes UI tests
         run: |
           set -euxo pipefail
           xcodebuild -project PikminPilot.xcodeproj -list
           xcodebuild -project PikminPilot.xcodeproj -list -json > xcode-list.json
-          python3 - <<'PYVERIFY'
+
+          python3 - <<'PY'
           import json
           from pathlib import Path
 
@@ -111,15 +46,22 @@ jobs:
           targets = set(project.get("targets", []))
           schemes = set(project.get("schemes", []))
 
-          required_targets = {"PikminPilot", "PikminPilotRunnerUITests"}
-          missing_targets = required_targets - targets
-          if missing_targets:
-              raise SystemExit("Missing target(s): " + ", ".join(sorted(missing_targets)))
-          if "PikminPilotRunnerUITests" not in schemes:
-              raise SystemExit("Shared runner scheme still missing after deterministic generation")
-          print("Runner target + shared scheme verified.")
-          PYVERIFY
+          required_targets = {
+              "PikminPilot",
+              "PikminPilotRunnerUITests",
+          }
 
+          missing = required_targets - targets
+          if missing:
+              raise SystemExit(
+                  "Missing target(s): " + ", ".join(sorted(missing))
+              )
+
+          if "PikminPilot" not in schemes:
+              raise SystemExit("Existing PikminPilot scheme is missing")
+
+          print("PikminPilot app scheme + UI test target verified.")
+          PY
 
       - name: Build unsigned iPhone app
         run: |
@@ -140,7 +82,7 @@ jobs:
           set -euxo pipefail
           xcodebuild \
             -project PikminPilot.xcodeproj \
-            -scheme PikminPilotRunnerUITests \
+            -scheme PikminPilot \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -168,7 +110,7 @@ jobs:
           mkdir RunnerPayload
           cp -R "$RUNNER_APP" RunnerPayload/
           mv RunnerPayload Payload
-          /usr/bin/zip -qry PikminPilotRunner-Stage7.6.1-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilotRunner-Stage7.6.2-unsigned.ipa Payload
           rm -rf Payload
 
       - name: Package IPA
@@ -177,17 +119,17 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
-          /usr/bin/zip -qry PikminPilot-Stage7.6.1-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilot-Stage7.6.2-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage7.6.1-unsigned
-          path: PikminPilot-Stage7.6.1-unsigned.ipa
+          name: PikminPilot-Stage7.6.2-unsigned
+          path: PikminPilot-Stage7.6.2-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilotRunner-Stage7.6.1-unsigned
+          name: PikminPilotRunner-Stage7.6.2-unsigned
           path: |
-            PikminPilotRunner-Stage7.6.1-unsigned.ipa
+            PikminPilotRunner-Stage7.6.2-unsigned.ipa
             RunnerBundleIdentifier.txt
             RunnerInfoPlist.txt
