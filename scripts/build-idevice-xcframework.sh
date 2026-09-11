@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.5: phone-local XCTest DTX bootstrap on the already-proven RSD tunnel.
+# Stage 7.5.1: phone-local XCTest DTX bootstrap on the already-proven RSD tunnel.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
@@ -21,7 +21,7 @@ git checkout "$PIN"
 # those exact private primitives against Pikmin Pilot's existing Adapter/RSD handles.
 cat >> idevice/src/services/dvt/xctest/mod.rs <<'RUST'
 
-// Pikmin Pilot Stage 7.5 diagnostic hook.
+// Pikmin Pilot Stage 7.5.1 diagnostic hook.
 // Uses the same private rsd_connect() implementation as the upstream XCTest
 // orchestrator, but reuses an RSD adapter/handshake supplied by the embedding app.
 pub async fn pilot_probe_existing_rsd_dtx(
@@ -83,6 +83,7 @@ pub async fn pilot_probe_existing_rsd_dtx(
 }
 RUST
 
+cp "$ROOT/RustPatch/pilot_xctest_probe.rs" ffi/src/pilot_xctest_probe.rs
 cp "$ROOT/RustPatch/pilot_xctest_dtx.rs" ffi/src/pilot_xctest_dtx.rs
 
 # Add a focused FFI-only feature under the existing [features] table.
@@ -103,8 +104,24 @@ PY
 
 cat >> ffi/src/lib.rs <<'RUST'
 
-// Pikmin Pilot Stage 7.5 phone-local XCTest DTX bootstrap.
+// Pikmin Pilot Stage 7.5.1 retained service probe + DTX bootstrap.
+mod pilot_xctest_probe;
 mod pilot_xctest_dtx;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pilot_xctest_service_probe(
+    handshake: *mut rsd::RsdHandshakeHandle,
+    message: *mut std::ffi::c_char,
+    message_capacity: usize,
+) -> i32 {
+    unsafe {
+        pilot_xctest_probe::pilot_xctest_service_probe_impl(
+            handshake,
+            message,
+            message_capacity,
+        )
+    }
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pilot_xctest_dtx_bootstrap(
@@ -147,10 +164,14 @@ python3 - "$LIB" <<'PY'
 from pathlib import Path
 import sys
 data = Path(sys.argv[1]).read_bytes()
-name = b"pilot_xctest_dtx_bootstrap"
-if name not in data:
-    raise SystemExit("Missing Stage 7.5 XCTest DTX export")
-print("Stage 7.5 XCTest DTX export present.")
+required = [
+    b"pilot_xctest_service_probe",
+    b"pilot_xctest_dtx_bootstrap",
+]
+missing = [name.decode() for name in required if name not in data]
+if missing:
+    raise SystemExit("Missing Stage 7.5.1 export(s): " + ", ".join(missing))
+print("Stage 7.5.1 service-probe + DTX exports present.")
 PY
 
 cp ffi/idevice.h "$HEADERS/idevice.h"
@@ -164,4 +185,4 @@ test -f "$OUT/Info.plist"
 test -f "$OUT/ios-arm64/libidevice_ffi.a"
 test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
-echo "Built Stage 7.5 $OUT"
+echo "Built Stage 7.5.1 $OUT"

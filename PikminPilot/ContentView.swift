@@ -18,7 +18,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.5 — Phone-local XCTest DTX Bootstrap")
+                        Text("Stage 7.5.1 — Phone-local XCTest DTX Bootstrap")
                             .font(.headline)
 
                         Text("Stage 7.4 已確認 testmanagerd.remote + dtservicehub 都存在。這版進一步建立真正的 DTX capability handshake：dtservicehub 1 條 + testmanagerd.remote 2 條；沒有 WDA localhost:8100 fallback。")
@@ -97,7 +97,7 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 7.5 測試順序") {
+                Section("Stage 7.5.1 測試順序") {
                     Text("1. 開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. 你已經確認 PROBE 顯示 READY，可直接按 BOOTSTRAP PHONE-LOCAL XCTEST DTX。\n4. 成功應顯示 PHONE-LOCAL XCTEST DTX READY，並列出 dtservicehub / testmanagerd ctrl / main ports。\n5. 這一步成功後，下一版才加入實際 XCUITest Runner 啟動與最小 tap。")
                 }
 
@@ -106,7 +106,7 @@ struct ContentView: View {
                     Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.2.1：phone-local DVT screenshot ✅", systemImage: "camera.fill")
                     Label("Stage 7.4：testmanagerd + dtservicehub service probe ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.5：DTX handshake bootstrap", systemImage: "wrench.and.screwdriver.fill")
+                    Label("Stage 7.5.1：DTX handshake bootstrap", systemImage: "wrench.and.screwdriver.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")

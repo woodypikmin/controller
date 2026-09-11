@@ -1,5 +1,5 @@
-// Pikmin Pilot Stage 7.4
-// Phone-local RSD manifest probe for modern XCTest/testmanagerd viability.
+// Pikmin Pilot Stage 7.5.1
+// Retained Stage 7.4 phone-local XCTest service manifest probe.
 
 use std::ffi::c_char;
 use std::ptr;
@@ -42,22 +42,10 @@ pub(crate) unsafe fn pilot_xctest_service_probe_impl(
 
     let handshake_ref = unsafe { &(*handshake).0 };
 
-    let tm = service_port(
-        handshake_ref,
-        "com.apple.dt.testmanagerd.remote",
-    );
-    let dvt = service_port(
-        handshake_ref,
-        "com.apple.instruments.dtservicehub",
-    );
-    let fetch = service_port(
-        handshake_ref,
-        "com.apple.dt.remoteFetchSymbols",
-    );
-    let view = service_port(
-        handshake_ref,
-        "com.apple.dt.ViewHierarchyAgent.remote",
-    );
+    let tm = service_port(handshake_ref, "com.apple.dt.testmanagerd.remote");
+    let dvt = service_port(handshake_ref, "com.apple.instruments.dtservicehub");
+    let fetch = service_port(handshake_ref, "com.apple.dt.remoteFetchSymbols");
+    let view = service_port(handshake_ref, "com.apple.dt.ViewHierarchyAgent.remote");
 
     let fmt = |value: Option<u16>| -> String {
         value
@@ -88,6 +76,5 @@ pub(crate) unsafe fn pilot_xctest_service_probe_impl(
     };
 
     write_message(message, message_capacity, &text);
-
     if ready { 0 } else { -71 }
 }
