@@ -1,2 +1,0 @@
-Stage 7.4.1 fixes only the Swift UI string literal in ContentView.swift.
-The XCTest service probe logic is unchanged.
