@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.8.2: execute a real XCUITest over the already-proven phone-local RSD tunnel.
+# Stage 7.8.3: recover the driver channel by reverting the Stage 7.8.2 DYLD override while keeping raw NSError diagnostics.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
@@ -15,7 +15,7 @@ git clone https://github.com/jkcoxson/idevice.git "$CACHE"
 cd "$CACHE"
 git checkout "$PIN"
 
-# Stage 7.8.2: upstream idevice guesses that every XCTest bootstrap NSError
+# Stage 7.8.3: upstream idevice guesses that every XCTest bootstrap NSError
 # with numeric code 103 means an untrusted developer certificate. That guess
 # is not safe without the NSError domain. Replace it with raw archive string
 # extraction so the phone can display Apple's actual domain/description text.
@@ -45,7 +45,7 @@ new = """                        // Preserve the numeric code but do not guess i
                         }
 """
 if old not in s:
-    raise SystemExit("Stage 7.8.2 bootstrap NSError patch target not found")
+    raise SystemExit("Stage 7.8.3 bootstrap NSError patch target not found")
 s = s.replace(old, new, 1)
 p.write_text(s)
 PY_BOOTERR
@@ -123,7 +123,7 @@ RUST
 # Pikmin Pilot's already-established phone-local Adapter/RSD handles.
 cat >> idevice/src/services/dvt/xctest/mod.rs <<'RUST'
 
-// Stage 7.8.2 bootstrap diagnostics. The decoded NSError sometimes exposes
+// Stage 7.8.3 bootstrap diagnostics. The decoded NSError sometimes exposes
 // only NSCode; its raw NSKeyedArchive still carries human-readable strings.
 fn pilot_collect_plist_strings(value: &Value, out: &mut Vec<String>) {
     match value {
@@ -278,26 +278,12 @@ pub async fn pilot_run_existing_rsd_xctest(
         cfg.runner_args.as_deref(),
     );
 
-    // iOS 17+/26 runner environment cleanup. These are direct environment
-    // values (not a shell), so use explicit absolute DYLD paths and do not
-    // inject the obsolete /Developer main-thread-checker dylib on modern iOS.
-    if ios_major_version >= 17 {
-        launch_env.insert(
-            "DYLD_FRAMEWORK_PATH".to_owned(),
-            Value::String(format!(
-                "{}/Frameworks:/System/Developer/Library/Frameworks:",
-                cfg.runner_app_path
-            )),
-        );
-        launch_env.insert(
-            "DYLD_LIBRARY_PATH".to_owned(),
-            Value::String(format!(
-                "{}/Frameworks:/System/Developer/usr/lib",
-                cfg.runner_app_path
-            )),
-        );
-        launch_env.remove("DYLD_INSERT_LIBRARIES");
-    }
+    // Stage 7.8.3: intentionally keep upstream build_launch_env byte-for-byte.
+    // Stage 7.8.2 overrode DYLD_* after build_launch_env; on this iOS 26.6.1
+    // device that changed the failure from a late bootstrap NSError to an
+    // earlier BrokenPipe while waiting for XCTestDriverInterface.  Reverting
+    // that override restores the already-observed driver-ready path so the
+    // raw bootstrap NSError diagnostic below can expose the real failure.
 
     let pid = launch_and_authorize_test_runner(
         &mut ctrl_proxy,

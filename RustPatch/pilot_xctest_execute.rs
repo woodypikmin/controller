@@ -1,4 +1,4 @@
-// Pikmin Pilot Stage 7.8.2
+// Pikmin Pilot Stage 7.8.3
 // Execute the installed UI-test runner end-to-end over the already-established
 // phone-local RSD transport. No WDA HTTP transport is involved.
 

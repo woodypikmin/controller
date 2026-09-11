@@ -19,7 +19,7 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.8.2 — XCTEST iOS 26 BOOTSTRAP FIX")
+                        Text("Stage 7.8.3 — XCTEST DRIVER CHANNEL RECOVERY")
                             .font(.headline)
 
                         Text("沿用已實機成功的 phone-local RSD、InstallationProxy、DTX bootstrap 與 Runner。這版把真正 XCTest lifecycle 串起來：TestConfig → testmanagerd ctrl/main → ProcessControl launch/authorize → XCTestDriverInterface → start test plan → testTapPikminCenter()。不使用 WDA localhost:8100。")
@@ -78,7 +78,7 @@ struct ContentView: View {
 
                         if isBootstrapFailure {
                             Label {
-                                Text("這次不是再把 Code 103 當成憑證未信任。7.8.2 會把 Apple 傳回的 bootstrap NSError 原始 archive 字串一起顯示，並修正 iOS 26 Runner 的 DYLD 啟動環境。若仍失敗，直接 COPY STATUS 貼回來。")
+                                Text("7.8.3 已撤回 7.8.2 的 DYLD 啟動環境改寫，因為它會讓 iOS 26 在等待 XCTestDriverInterface 時直接斷線。保留 raw bootstrap NSError 診斷；若仍失敗，直接 COPY STATUS 貼回來。")
                                     .font(.footnote)
                             } icon: {
                                 Image(systemName: "exclamationmark.triangle.fill")
