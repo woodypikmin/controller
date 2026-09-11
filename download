@@ -1,8 +1,0 @@
-.build/
-build/
-Payload/
-*.ipa
-PikminPilot.xcodeproj/
-Vendor/IDevice/IDevice.xcframework/
-Vendor/IDevice/include/
-.DS_Store
