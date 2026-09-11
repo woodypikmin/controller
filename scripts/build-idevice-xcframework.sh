@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Stage 7.3.5 probes the newer CoreDevice HID implementation on iOS 26.
-# Pin the exact upstream commit seen in idevice CI on 2026-09-11.
+# Stage 7.4: phone-local RSD XCTest service manifest probe.
+# Keep this aligned with the newer idevice revision used during Stage 7.3.
 PIN="${IDEVICE_PIN:-7a1cca3}"
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 CACHE="$ROOT/.build/idevice"
@@ -16,66 +16,28 @@ git clone https://github.com/jkcoxson/idevice.git "$CACHE"
 cd "$CACHE"
 git checkout "$PIN"
 
-# Add the iOS 26 direct-HID probe. No displayservice helper is used.
-cp "$ROOT/RustPatch/pilot_hid.rs" ffi/src/pilot_hid.rs
+cp "$ROOT/RustPatch/pilot_xctest_probe.rs" ffi/src/pilot_xctest_probe.rs
 
-# Register our two internal modules in idevice-ffi.
 cat >> ffi/src/lib.rs <<'RUST'
 
-// Pikmin Pilot Stage 7.3.5 additions. No WDA transport is used here.
-mod pilot_hid;
+// Pikmin Pilot Stage 7.4 phone-local XCTest service probe.
+mod pilot_xctest_probe;
 
-// Export the custom HID entry points from the crate root. Keeping the C ABI
-// symbols at crate root prevents rustc/staticlib reachability from dropping a
-// no_mangle function that lives only inside a private helper module.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn pilot_hid_tap_rsd(
-    provider: *mut core_device_proxy::AdapterHandle,
+pub unsafe extern "C" fn pilot_xctest_service_probe(
     handshake: *mut rsd::RsdHandshakeHandle,
-    x: u16,
-    y: u16,
     message: *mut std::ffi::c_char,
     message_capacity: usize,
 ) -> i32 {
     unsafe {
-        pilot_hid::pilot_hid_tap_rsd_impl(
-            provider, handshake, x, y, message, message_capacity,
-        )
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn pilot_hid_drag_rsd(
-    provider: *mut core_device_proxy::AdapterHandle,
-    handshake: *mut rsd::RsdHandshakeHandle,
-    x1: u16,
-    y1: u16,
-    x2: u16,
-    y2: u16,
-    message: *mut std::ffi::c_char,
-    message_capacity: usize,
-) -> i32 {
-    unsafe {
-        pilot_hid::pilot_hid_drag_rsd_impl(
-            provider, handshake, x1, y1, x2, y2, message, message_capacity,
+        pilot_xctest_probe::pilot_xctest_service_probe_impl(
+            handshake,
+            message,
+            message_capacity,
         )
     }
 }
 RUST
-
-# Add a minimal FFI feature for the direct UniversalHID probe.
-python3 - <<'PY'
-from pathlib import Path
-import re
-p = Path("ffi/Cargo.toml")
-s = p.read_text()
-if "pilot_hid =" not in s:
-    marker = "[features]"
-    if marker not in s:
-        raise SystemExit("ffi/Cargo.toml has no [features] section")
-    s = s.replace(marker, marker + '\npilot_hid = ["idevice/display_stream", "idevice/core_device", "idevice/rsd"]', 1)
-p.write_text(s)
-PY
 
 rustup target add aarch64-apple-ios
 
@@ -88,33 +50,22 @@ cargo build \
   --locked \
   --target aarch64-apple-ios \
   --no-default-features \
-  --features "obfuscate,ring,core_device,tunnel_tcp_stack,dvt,pilot_hid"
+  --features "obfuscate,ring,core_device,tunnel_tcp_stack,dvt"
 
 LIB="target/aarch64-apple-ios/release/libidevice_ffi.a"
 test -f "$LIB"
 ls -lh "$LIB"
 
-# Xcode 26.6's Apple nm cannot parse LLVM 22 bitcode metadata emitted by
-# Rust 1.98, so do a format-agnostic raw archive check instead. The exported
-# C ABI names are stored plainly in the Mach-O/archive symbol/string tables.
-echo "Checking Stage 7.3.5 HID exports in $LIB without Apple nm ..."
+# Format-agnostic check; Apple nm cannot parse every Rust LLVM object format.
 python3 - "$LIB" <<'PY'
 from pathlib import Path
 import sys
-
 data = Path(sys.argv[1]).read_bytes()
-missing = [
-    name for name in (b"pilot_hid_tap_rsd", b"pilot_hid_drag_rsd")
-    if name not in data
-]
-if missing:
-    raise SystemExit("Missing HID export(s): " + ", ".join(x.decode() for x in missing))
-print("HID export names present in static archive.")
+if b"pilot_xctest_service_probe" not in data:
+    raise SystemExit("Missing pilot_xctest_service_probe export")
+print("Stage 7.4 XCTest probe export present.")
 PY
 
-# The app declares the two custom C symbols in PilotIDeviceBridge.m, so the
-# generated idevice.h only needs the normal upstream FFI handle definitions.
-# This avoids making the build depend on cbindgen exporting private modules.
 cp ffi/idevice.h "$HEADERS/idevice.h"
 
 xcodebuild -create-xcframework \
@@ -126,4 +77,4 @@ test -f "$OUT/Info.plist"
 test -f "$OUT/ios-arm64/libidevice_ffi.a"
 test -f "$OUT/ios-arm64/Headers/idevice.h"
 ls -lh "$OUT/ios-arm64/libidevice_ffi.a"
-echo "Built Stage 7.3.5 HID-enabled $OUT"
+echo "Built Stage 7.4 $OUT"

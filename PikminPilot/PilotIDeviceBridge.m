@@ -2,34 +2,18 @@
 #import "PilotIDeviceBridge.h"
 #import "idevice.h"
 
-// Stage 7.3 custom Rust symbols are linked into libidevice_ffi.a at Actions
-// build time. Keep declarations here so Objective-C does not depend on
-// cbindgen deciding to expose these internal helper functions in idevice.h.
-extern int32_t pilot_hid_tap_rsd(
-    struct AdapterHandle *provider,
-    struct RsdHandshakeHandle *handshake,
-    uint16_t x,
-    uint16_t y,
-    char *message,
-    size_t message_capacity
-);
-
-extern int32_t pilot_hid_drag_rsd(
-    struct AdapterHandle *provider,
-    struct RsdHandshakeHandle *handshake,
-    uint16_t x1,
-    uint16_t y1,
-    uint16_t x2,
-    uint16_t y2,
-    char *message,
-    size_t message_capacity
-);
-
 #import <Foundation/Foundation.h>
 #import <arpa/inet.h>
 #import <netinet/in.h>
 #import <sys/socket.h>
-#import <unistd.h>
+
+// Custom Stage 7.4 C ABI export injected into idevice-ffi at build time.
+extern int32_t pilot_xctest_service_probe(
+    struct RsdHandshakeHandle *handshake,
+    char *message,
+    size_t message_capacity
+);
+
 
 static void PPWriteMessage(char *message, size_t capacity, NSString *text) {
     if (message == NULL || capacity == 0) {
@@ -533,239 +517,38 @@ int32_t PPTakePhoneScreenshot(
     return 0;
 }
 
-int32_t PPPhoneTap(
+
+int32_t PPProbePhoneLocalXCTestServices(
     const char *pairingPath,
     const char *host,
     uint16_t port,
-    uint16_t x,
-    uint16_t y,
     char *message,
     size_t messageCapacity
 ) {
     struct AdapterHandle *adapter = NULL;
     struct RsdHandshakeHandle *handshake = NULL;
 
-    int32_t tunnelResult = PPCreateTunnel(
-        pairingPath, host, port,
-        &adapter, &handshake,
-        message, messageCapacity
-    );
-    if (tunnelResult != 0) {
-        return tunnelResult;
-    }
-
-    int32_t result = pilot_hid_tap_rsd(
-        adapter,
-        handshake,
-        x,
-        y,
-        message,
-        messageCapacity
-    );
-
-    rsd_handshake_free(handshake);
-    adapter_free(adapter);
-    return result;
-}
-
-int32_t PPPhoneDrag(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x1,
-    uint16_t y1,
-    uint16_t x2,
-    uint16_t y2,
-    char *message,
-    size_t messageCapacity
-) {
-    struct AdapterHandle *adapter = NULL;
-    struct RsdHandshakeHandle *handshake = NULL;
-
-    int32_t tunnelResult = PPCreateTunnel(
-        pairingPath, host, port,
-        &adapter, &handshake,
-        message, messageCapacity
-    );
-    if (tunnelResult != 0) {
-        return tunnelResult;
-    }
-
-    int32_t result = pilot_hid_drag_rsd(
-        adapter,
-        handshake,
-        x1,
-        y1,
-        x2,
-        y2,
-        message,
-        messageCapacity
-    );
-
-    rsd_handshake_free(handshake);
-    adapter_free(adapter);
-    return result;
-}
-
-
-static int32_t PPLaunchPikminOnExistingRSD(
-    struct AdapterHandle *adapter,
-    struct RsdHandshakeHandle *handshake,
-    char *message,
-    size_t messageCapacity
-) {
-    struct AppServiceHandle *appService = NULL;
-    struct IdeviceFfiError *connectError =
-        app_service_connect_rsd(adapter, handshake, &appService);
-
-    if (connectError != NULL) {
-        return PPConsumeError(
-            connectError,
-            message,
-            messageCapacity,
-            @"AppService connect failed before HID"
-        );
-    }
-
-    struct LaunchResponseC *response = NULL;
-    struct IdeviceFfiError *launchError =
-        app_service_launch_app(
-            appService,
-            "com.nianticlabs.pikmin",
-            NULL,
-            0,
-            0,
-            0,
-            NULL,
-            &response
-        );
-
-    if (launchError != NULL) {
-        app_service_free(appService);
-        return PPConsumeError(
-            launchError,
-            message,
-            messageCapacity,
-            @"Pikmin launch failed before HID"
-        );
-    }
-
-    if (response != NULL) {
-        app_service_free_launch_response(response);
-    }
-    app_service_free(appService);
-    return 0;
-}
-
-int32_t PPLaunchAndTapPikmin(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x,
-    uint16_t y,
-    char *message,
-    size_t messageCapacity
-) {
-    struct AdapterHandle *adapter = NULL;
-    struct RsdHandshakeHandle *handshake = NULL;
-
-    int32_t tunnelResult = PPCreateTunnel(
-        pairingPath,
-        host,
-        port,
-        &adapter,
-        &handshake,
-        message,
-        messageCapacity
-    );
-    if (tunnelResult != 0) {
-        return tunnelResult;
-    }
-
-    int32_t launchResult =
-        PPLaunchPikminOnExistingRSD(
-            adapter,
-            handshake,
+    int32_t tunnelResult =
+        PPCreateTunnel(
+            pairingPath,
+            host,
+            port,
+            &adapter,
+            &handshake,
             message,
             messageCapacity
         );
 
-    if (launchResult != 0) {
-        rsd_handshake_free(handshake);
-        adapter_free(adapter);
-        return launchResult;
-    }
-
-    // Pikmin must be the current foreground target before dtuhidd posts input.
-    usleep(1500 * 1000);
-
-    int32_t result = pilot_hid_tap_rsd(
-        adapter,
-        handshake,
-        x,
-        y,
-        message,
-        messageCapacity
-    );
-
-    rsd_handshake_free(handshake);
-    adapter_free(adapter);
-    return result;
-}
-
-int32_t PPLaunchAndDragPikmin(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x1,
-    uint16_t y1,
-    uint16_t x2,
-    uint16_t y2,
-    char *message,
-    size_t messageCapacity
-) {
-    struct AdapterHandle *adapter = NULL;
-    struct RsdHandshakeHandle *handshake = NULL;
-
-    int32_t tunnelResult = PPCreateTunnel(
-        pairingPath,
-        host,
-        port,
-        &adapter,
-        &handshake,
-        message,
-        messageCapacity
-    );
     if (tunnelResult != 0) {
         return tunnelResult;
     }
 
-    int32_t launchResult =
-        PPLaunchPikminOnExistingRSD(
-            adapter,
+    int32_t result =
+        pilot_xctest_service_probe(
             handshake,
             message,
             messageCapacity
         );
-
-    if (launchResult != 0) {
-        rsd_handshake_free(handshake);
-        adapter_free(adapter);
-        return launchResult;
-    }
-
-    usleep(1500 * 1000);
-
-    int32_t result = pilot_hid_drag_rsd(
-        adapter,
-        handshake,
-        x1,
-        y1,
-        x2,
-        y2,
-        message,
-        messageCapacity
-    );
 
     rsd_handshake_free(handshake);
     adapter_free(adapter);

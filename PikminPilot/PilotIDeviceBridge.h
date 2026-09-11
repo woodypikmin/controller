@@ -7,32 +7,51 @@
 extern "C" {
 #endif
 
-int32_t PPValidateRPPairingFile(const char *path, char *message, size_t messageCapacity);
-int32_t PPProbeRSD(const char *pairingPath, const char *host, uint16_t port, char *message, size_t messageCapacity);
-int32_t PPLaunchPikmin(const char *pairingPath, const char *host, uint16_t port, char *message, size_t messageCapacity);
-int32_t PPTakePhoneScreenshot(const char *pairingPath, const char *host, uint16_t port, const char *outputPath, char *message, size_t messageCapacity);
-
-/// Stage 7.3: create a fresh phone-local RSD tunnel, open the CoreDevice display
-/// auth gate, then send one normalized UniversalHID tap. Coordinates 0...65535.
-int32_t PPPhoneTap(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x,
-    uint16_t y,
+/// Returns 0 on success. Writes a human-readable result into message.
+int32_t PPValidateRPPairingFile(
+    const char *path,
     char *message,
     size_t messageCapacity
 );
 
-/// Stage 7.3: same transport/auth gate, then send a deliberate UniversalHID drag.
-int32_t PPPhoneDrag(
+/// Creates an on-device RPPairing tunnel to host:port and performs an RSD
+/// handshake. Returns 0 on success.
+int32_t PPProbeRSD(
     const char *pairingPath,
     const char *host,
     uint16_t port,
-    uint16_t x1,
-    uint16_t y1,
-    uint16_t x2,
-    uint16_t y2,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates the same phone-local tunnel and uses CoreDevice AppService to
+/// launch Pikmin Bloom. Returns 0 on success.
+int32_t PPLaunchPikmin(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
+/// Creates the phone-local tunnel, connects DVT RemoteServer over RSD, captures
+/// one screenshot, and writes it to outputPath. Returns 0 on success.
+int32_t PPTakePhoneScreenshot(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *outputPath,
+    char *message,
+    size_t messageCapacity
+);
+
+
+/// Creates the phone-local RSD tunnel and checks whether the modern
+/// testmanagerd + DVT services required for iOS 17+ XCTest are advertised.
+int32_t PPProbePhoneLocalXCTestServices(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
     char *message,
     size_t messageCapacity
 );
@@ -40,26 +59,3 @@ int32_t PPPhoneDrag(
 #ifdef __cplusplus
 }
 #endif
-
-
-int32_t PPLaunchAndTapPikmin(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x,
-    uint16_t y,
-    char *message,
-    size_t messageCapacity
-);
-
-int32_t PPLaunchAndDragPikmin(
-    const char *pairingPath,
-    const char *host,
-    uint16_t port,
-    uint16_t x1,
-    uint16_t y1,
-    uint16_t x2,
-    uint16_t y2,
-    char *message,
-    size_t messageCapacity
-);
