@@ -7,6 +7,15 @@
 #import <netinet/in.h>
 #import <sys/socket.h>
 
+// Custom Stage 7.5 C ABI export injected into idevice-ffi at build time.
+extern int32_t pilot_xctest_dtx_bootstrap(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    char *message,
+    size_t message_capacity
+);
+
+
 // Custom Stage 7.4 C ABI export injected into idevice-ffi at build time.
 extern int32_t pilot_xctest_service_probe(
     struct RsdHandshakeHandle *handshake,
@@ -545,6 +554,45 @@ int32_t PPProbePhoneLocalXCTestServices(
 
     int32_t result =
         pilot_xctest_service_probe(
+            handshake,
+            message,
+            messageCapacity
+        );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+
+int32_t PPBootstrapPhoneLocalXCTestDTX(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+) {
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+
+    int32_t tunnelResult =
+        PPCreateTunnel(
+            pairingPath,
+            host,
+            port,
+            &adapter,
+            &handshake,
+            message,
+            messageCapacity
+        );
+
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result =
+        pilot_xctest_dtx_bootstrap(
+            adapter,
             handshake,
             message,
             messageCapacity

@@ -56,6 +56,17 @@ int32_t PPProbePhoneLocalXCTestServices(
     size_t messageCapacity
 );
 
+
+/// Opens dtservicehub + two testmanagerd.remote DTX sessions using the
+/// existing phone-local RSD tunnel and performs their capability handshakes.
+int32_t PPBootstrapPhoneLocalXCTestDTX(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    char *message,
+    size_t messageCapacity
+);
+
 #ifdef __cplusplus
 }
 #endif

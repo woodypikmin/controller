@@ -34,6 +34,20 @@ actor IDeviceEngine {
         }
     }
 
+    func bootstrapXCTestDTX() -> Result {
+        callBridge { path, message, capacity in
+            host.withCString { hostCString in
+                PPBootstrapPhoneLocalXCTestDTX(
+                    path,
+                    hostCString,
+                    port,
+                    message,
+                    capacity
+                )
+            }
+        }
+    }
+
     func probeXCTestServices() -> Result {
         callBridge { path, message, capacity in
             host.withCString { hostCString in

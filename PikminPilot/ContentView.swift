@@ -18,10 +18,10 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 7.4.1 — Phone-local XCTest Service Probe")
+                        Text("Stage 7.5 — Phone-local XCTest DTX Bootstrap")
                             .font(.headline)
 
-                        Text("CoreDevice UniversalHID 已在 iOS 26.6.1 實機確認 ServiceNotFound。這版改查 phone-local RSD 是否提供 iOS 17+ XCTest 必要的 testmanagerd.remote + dtservicehub；沒有 WDA localhost:8100 fallback。")
+                        Text("Stage 7.4 已確認 testmanagerd.remote + dtservicehub 都存在。這版進一步建立真正的 DTX capability handshake：dtservicehub 1 條 + testmanagerd.remote 2 條；沒有 WDA localhost:8100 fallback。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -66,6 +66,11 @@ struct ContentView: View {
                     }
                     .disabled(busy || pairing.pairingURL == nil)
 
+                    Button("BOOTSTRAP PHONE-LOCAL XCTEST DTX") {
+                        Task { await bootstrapXCTestDTX() }
+                    }
+                    .disabled(busy || pairing.pairingURL == nil)
+
                     Button("PHONE-LOCAL → LAUNCH PIKMIN") {
                         Task { await launchPikmin() }
                     }
@@ -92,15 +97,16 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 7.4.1 測試順序") {
-                    Text("1. 開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. 按 PROBE PHONE-LOCAL XCTEST SERVICES。\n4. 如果顯示 READY，代表 testmanagerd.remote + dtservicehub 都存在，下一版直接接完整 phone-local XCTest Runner。\n5. 如果顯示 BLOCKED，把整段狀態貼給我；我們會知道是缺 testmanagerd 還是 DVT。")
+                Section("Stage 7.5 測試順序") {
+                    Text("1. 開 LocalDevVPN。\n2. CONNECT PHONE-LOCAL RSD。\n3. 你已經確認 PROBE 顯示 READY，可直接按 BOOTSTRAP PHONE-LOCAL XCTEST DTX。\n4. 成功應顯示 PHONE-LOCAL XCTEST DTX READY，並列出 dtservicehub / testmanagerd ctrl / main ports。\n5. 這一步成功後，下一版才加入實際 XCUITest Runner 啟動與最小 tap。")
                 }
 
                 Section("Bot Core") {
                     Label("Stage 5 card-first 水果辨識：保留", systemImage: "checkmark.circle.fill")
                     Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.2.1：phone-local DVT screenshot ✅", systemImage: "camera.fill")
-                    Label("Stage 7.4.1：phone-local testmanagerd/XCTest probe", systemImage: "wrench.and.screwdriver.fill")
+                    Label("Stage 7.4：testmanagerd + dtservicehub service probe ✅", systemImage: "checkmark.circle.fill")
+                    Label("Stage 7.5：DTX handshake bootstrap", systemImage: "wrench.and.screwdriver.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -170,6 +176,16 @@ struct ContentView: View {
                 status = "Screenshot bytes received, but UIKit could not decode image"
             }
         }
+    }
+
+    @MainActor
+    private func bootstrapXCTestDTX() async {
+        guard let url = pairing.pairingURL else { return }
+        busy = true
+        defer { busy = false }
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let result = await engine.bootstrapXCTestDTX()
+        status = result.message
     }
 
     @MainActor
