@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 9.2 Embedded Runner Auto-Bootstrap
+name: Build Pikmin Pilot Stage 10.0 Free Apple ID Stable Package
 
 on:
   workflow_dispatch:
@@ -37,6 +37,24 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$TEST_BUNDLE/Info.plist" | tee EmbeddedXCTestBundleIdentifier.txt
           shasum -a 256 "$RUNNER_IPA" | tee EmbeddedRunnerSHA256.txt
           ls -lh "$RUNNER_IPA"
+
+          security cms -D -i "$RUNNER_APP/embedded.mobileprovision" > EmbeddedRunnerProvisioning.plist
+          python3 - <<'PYMETA'
+          import plistlib
+          from pathlib import Path
+          src = plistlib.loads(Path("EmbeddedRunnerProvisioning.plist").read_bytes())
+          ent = src.get("Entitlements", {}) or {}
+          team = (src.get("TeamIdentifier") or [ent.get("com.apple.developer.team-identifier", "")])[0]
+          out = {
+              "ExpirationDate": src.get("ExpirationDate"),
+              "CreationDate": src.get("CreationDate"),
+              "TeamIdentifier": team,
+              "ApplicationIdentifier": ent.get("application-identifier", ""),
+              "ProfileName": src.get("Name", ""),
+          }
+          Path("PikminPilotEmbeddedRunnerMetadata.plist").write_bytes(plistlib.dumps(out, fmt=plistlib.FMT_XML))
+          print(out)
+          PYMETA
           rm -rf EmbeddedRunnerCheck
 
       - name: Build IDevice XCFramework on runner
@@ -69,11 +87,11 @@ jobs:
           data = json.loads(Path("xcode-list.json").read_text())
           project = data.get("project", {})
           targets = set(project.get("targets", []))
-          required = {"PikminPilot", "PikminPilotTunnel", "PikminPilotRunnerUITests"}
+          required = {"PikminPilot", "PikminPilotRunnerUITests"}
           missing = required - targets
           if missing:
               raise SystemExit("Missing target(s): " + ", ".join(sorted(missing)))
-          print("Stage 9.2 targets verified")
+          print("Stage 10.0 targets verified")
           PY
 
       - name: Build unsigned iPhone host app
@@ -96,22 +114,12 @@ jobs:
           APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           test -d "$APP"
           cp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
+          cp PikminPilotEmbeddedRunnerMetadata.plist "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           test -s "$APP/PikminPilotEmbeddedRunner.ipa"
+          test -s "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           cmp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
           shasum -a 256 "$APP/PikminPilotEmbeddedRunner.ipa" | tee AppEmbeddedRunnerSHA256.txt
           echo "Embedded signed Runner copied byte-for-byte into host app bundle."
-
-      - name: Verify embedded PacketTunnelProvider layout
-        run: |
-          set -euxo pipefail
-          APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
-          APPEX="$(find "$APP/PlugIns" -maxdepth 1 -type d -name '*Tunnel*.appex' -print -quit)"
-          test -n "$APPEX"
-          test -d "$APPEX"
-          test -f "$APPEX/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tee AppBundleIdentifier.txt
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist" | tee TunnelBundleIdentifier.txt
-          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist" | grep -F 'com.apple.networkextension.packet-tunnel'
 
       - name: Package single Pikmin Pilot IPA
         run: |
@@ -120,17 +128,17 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
-          /usr/bin/zip -qry PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa Payload
-          unzip -l PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
+          /usr/bin/zip -qry PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa Payload
+          unzip -l PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned
+          name: PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned
           path: |
-            PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa
+            PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa
             AppBundleIdentifier.txt
-            TunnelBundleIdentifier.txt
             EmbeddedRunnerBundleIdentifier.txt
             EmbeddedXCTestBundleIdentifier.txt
             EmbeddedRunnerSHA256.txt
             AppEmbeddedRunnerSHA256.txt
+            PikminPilotEmbeddedRunnerMetadata.plist
