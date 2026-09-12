@@ -20,9 +20,13 @@ targets:
     - sdk: Foundation.framework
     - sdk: Security.framework
     - sdk: Network.framework
+    - sdk: NetworkExtension.framework
     - sdk: SystemConfiguration.framework
+    - target: PikminPilotTunnel
+      embed: true
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: PikminPilot/PikminPilot.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.example.PikminPilot
         PRODUCT_NAME: PikminPilot
         TARGETED_DEVICE_FAMILY: '1'
@@ -41,6 +45,23 @@ targets:
       - PikminPilotRunnerUITests
       management:
         shared: true
+  PikminPilotTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+    - path: PikminPilotTunnel
+    dependencies:
+    - sdk: NetworkExtension.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.PikminPilot.Tunnel
+        INFOPLIST_FILE: PikminPilotTunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PikminPilotTunnel/PikminPilotTunnel.entitlements
+        PRODUCT_NAME: PikminPilotTunnel
+        TARGETED_DEVICE_FAMILY: '1'
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        CODE_SIGN_STYLE: Automatic
   PikminPilotRunnerUITests:
     type: bundle.ui-testing
     platform: iOS

@@ -4,6 +4,7 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var pairing = PairingRecordStore()
+    @StateObject private var tunnel = PikminTunnelManager.shared
     @StateObject private var loop = Stage8FullLoopController()
 
     @State private var showImporter = false
@@ -20,14 +21,42 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 8.2.2 — FRESH PINK AFTER CHECKPOINT")
+                        Text("Stage 9.0 — INTEGRATED LOCAL TUNNEL")
                             .font(.headline)
 
-                        Text("Stage 8.0 已實機證明 DVT screenshot → card-first AVAILABLE → dynamic XCTest tap。8.1 直接串回完整 Stage 5：AVAILABLE → 前往探險 → 粉紅 → 固定 12 隻 → GO → 搬運中綠色 X → 回列表 → 下一個。全程 phone-local RSD + DVT + XCTest，不使用 WDA localhost:8100。")
+                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop，不改 detector / XCTest lifecycle。Stage 9.0 把 LocalDevVPN 的 phone-local loopback PacketTunnelProvider 直接嵌入 Pikmin Pilot，目標是移除獨立 LocalDevVPN App。全程仍不使用 WDA localhost:8100。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 6)
+                }
+
+                Section("0. Integrated Local Tunnel") {
+                    LabeledContent("Tunnel", value: tunnel.state.rawValue)
+                    LabeledContent("Provider", value: tunnel.providerBundleID)
+                    LabeledContent("Interface", value: tunnel.interfaceCIDR)
+                    LabeledContent("Phone peer", value: tunnel.peerCIDR)
+
+                    Text(tunnel.detail)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+
+                    Button("ENABLE / START INTEGRATED TUNNEL") {
+                        Task { await startIntegratedTunnel() }
+                    }
+                    .disabled(busy || loop.isRunning)
+
+                    if tunnel.state == .connected || tunnel.state == .connecting {
+                        Button("STOP INTEGRATED TUNNEL", role: .destructive) {
+                            tunnel.stop()
+                        }
+                        .disabled(loop.isRunning)
+                    }
+
+                    Text("第一次啟用時 iOS 會顯示『新增 VPN 設定』系統授權。Stage 9.0 會在 runtime 動態讀取 Sideloadly 簽完後真正的 .appex bundle ID，不 hard-code com.example。測試這版時先把獨立 LocalDevVPN 關掉，避免兩個 tunnel 同時競爭。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("1. Pairing Record") {
@@ -89,6 +118,12 @@ struct ContentView: View {
                     }
                     .padding(.vertical, 4)
 
+                    Button("STAGE 9.0 → START PILOT (TUNNEL + RSD + LOOP)") {
+                        Task { await startStage90Auto() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
                     Button("CONNECT PHONE-LOCAL RSD") {
                         Task { await connectRSD() }
                     }
@@ -135,7 +170,7 @@ struct ContentView: View {
                     }
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
 
-                    Button("STAGE 8.2.2 → START FULL LOOP") {
+                    Button("DEBUG → START LOOP (TUNNEL ALREADY READY)") {
                         startStage81Loop()
                     }
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
@@ -159,7 +194,7 @@ struct ContentView: View {
                     if busy || loop.isRunning {
                         HStack {
                             ProgressView()
-                            Text(loop.isRunning ? "Stage 8.2.2 自動搬運中…" : "idevice 正在連線…")
+                            Text(loop.isRunning ? "Stage 9.0 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
                         }
                     }
                 }
@@ -177,8 +212,14 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 8.2.2 FRESH PINK") {
-                    Text("1. 開 LocalDevVPN。\n2. 先開 Pikmin Bloom，停在『探險水果列表』；不要 force quit。\n3. 回 Pikmin Pilot → CONNECT PHONE-LOCAL RSD。\n4. 按 STAGE 8.2.2 → START FULL LOOP。\n5. card-first：BUSY / COMPLETE 永遠不點，只選 AVAILABLE。\n6. 偵測到粉紅後，Pilot 先回前景建立全新的 background task，接著單一 XCTest session 快速完成『粉紅 → 12 → GO → 綠色 X』。\n7. 綠色 X 點完後 Runner 主動把 Pilot 帶回前景；Pilot 立即開下一個 background window，再 activate Pikmin 進 Round 2。\n8. expiration handler 現在會正確 endBackgroundTask，避免 iOS 因逾時 task 終止 Pilot process。\n9. Status 持久化；只有真的按 STOP 才會寫 STOPPED BY USER。")
+                Section("Stage 9.0 Test") {
+                    Text("1. 先把獨立 LocalDevVPN 關掉。\n2. 第一次按 ENABLE / START INTEGRATED TUNNEL，允許 iOS 新增 VPN 設定。\n3. Tunnel 顯示 CONNECTED 後，10.7.0.1:49152 應由 Pikmin Pilot 自己的 PacketTunnelProvider 提供 loopback path。\n4. Pairing Record 沿用目前已成功的檔案。\n5. 開 Pikmin Bloom 到探險水果列表後回 Pikmin Pilot。\n6. 之後只按 STAGE 9.0 → START PILOT (TUNNEL + RSD + LOOP)：它會確認 tunnel → probe RSD → 啟動原封不動的 Stage 8.2.2 loop。\n7. 如果 Tunnel 本身失敗，COPY STATUS / tunnel detail 給我；先不要動已成功的 8.2.2 automation engine。")
+                }
+
+                Section("Credits") {
+                    Text("Integrated loopback tunnel behavior is based on LocalDevVPN / StosVPN by the SideStore Team and contributors (jkcoxson, Stossy11). License text is included in THIRD_PARTY_LOCALDEVVPN_LICENSE.txt. Pikmin Pilot remains a separate project and does not reuse LocalDevVPN branding.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Bot Core") {
@@ -190,7 +231,8 @@ struct ContentView: View {
                     Label("Stage 7.6：real XCUITest Runner package + discovery ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 8.2.2：checkpoint → 回 Pikmin → fresh pink detect → single tail", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Stage 8.2.2：完整 loop 實機穩定 ✅", systemImage: "checkmark.circle.fill")
+                    Label("Stage 9.0：內嵌 PacketTunnelProvider → 10.7.0.1 phone-local path", systemImage: "network")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -214,6 +256,9 @@ struct ContentView: View {
                 }
             }
         }
+        .task {
+            await tunnel.refresh()
+        }
     }
 
 
@@ -232,6 +277,57 @@ struct ContentView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.5))
             statusCopied = false
+        }
+    }
+
+    @MainActor
+    private func startIntegratedTunnel() async {
+        busy = true
+        status = "STAGE 9.0 TUNNEL • preparing embedded PacketTunnelProvider…"
+        defer { busy = false }
+
+        do {
+            try await tunnel.ensureStarted()
+            status = "STAGE 9.0 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR) • next=probe 10.7.0.1:49152"
+        } catch {
+            await tunnel.refresh()
+            status = "STAGE 9.0 TUNNEL FAILED • \(error.localizedDescription) • tunnel=\(tunnel.detail)"
+        }
+    }
+
+    @MainActor
+    private func startStage90Auto() async {
+        guard let url = pairing.pairingURL else { return }
+        busy = true
+        status = "STAGE 9.0 START • integrated tunnel → RSD probe → stable 8.2.2 loop"
+
+        do {
+            try await tunnel.ensureStarted()
+            status = "STAGE 9.0 • tunnel CONNECTED ✅ • probing phone-local RSD 10.7.0.1:49152…"
+
+            let engine = IDeviceEngine(pairingPath: url.path)
+            let rsd = await engine.probeRSD()
+            guard rsd.ok else {
+                busy = false
+                status = "STAGE 9.0 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
+                return
+            }
+
+            status = "STAGE 9.0 • tunnel ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
+            busy = false
+            loop.start(
+                pairingPath: url.path,
+                onStatus: { newStatus in
+                    status = newStatus
+                },
+                onScreenshot: { image in
+                    screenshotImage = image
+                }
+            )
+        } catch {
+            busy = false
+            await tunnel.refresh()
+            status = "STAGE 9.0 FAILED • phase=integrated-tunnel • \(error.localizedDescription) • \(tunnel.detail)"
         }
     }
 
