@@ -37,6 +37,8 @@ targets:
         - -lc++
         - -lz
         CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: '102'
+        MARKETING_VERSION: '10.2'
     scheme:
       testTargets:
       - PikminPilotRunnerUITests
@@ -57,3 +59,5 @@ targets:
         TEST_TARGET_NAME: PikminPilot
         GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: '102'
+        MARKETING_VERSION: '10.2'
