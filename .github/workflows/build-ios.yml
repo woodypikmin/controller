@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 10.1 Pilot Control UI
+name: Build Pikmin Pilot Stage 10.2 Polished Control + Pink Count + Speed
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify embedded signed Runner payload
+      - name: Verify embedded signed Runner fallback payload
         run: |
           set -euxo pipefail
           RUNNER_IPA="EmbeddedRunner/PikminPilotRunner-signed.ipa"
@@ -36,7 +36,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_APP/Info.plist" | tee EmbeddedRunnerBundleIdentifier.txt
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$TEST_BUNDLE/Info.plist" | tee EmbeddedXCTestBundleIdentifier.txt
           shasum -a 256 "$RUNNER_IPA" | tee EmbeddedRunnerSHA256.txt
-          ls -lh "$RUNNER_IPA"
 
           security cms -D -i "$RUNNER_APP/embedded.mobileprovision" > EmbeddedRunnerProvisioning.plist
           python3 - <<'PYMETA'
@@ -44,11 +43,11 @@ jobs:
           from pathlib import Path
           src = plistlib.loads(Path("EmbeddedRunnerProvisioning.plist").read_bytes())
           ent = src.get("Entitlements", {}) or {}
-          team = (src.get("TeamIdentifier") or [ent.get("com.apple.developer.team-identifier", "")])[0]
+          team_ids = src.get("TeamIdentifier") or [ent.get("com.apple.developer.team-identifier", "")]
           out = {
               "ExpirationDate": src.get("ExpirationDate"),
               "CreationDate": src.get("CreationDate"),
-              "TeamIdentifier": team,
+              "TeamIdentifier": team_ids[0] if team_ids else "",
               "ApplicationIdentifier": ent.get("application-identifier", ""),
               "ProfileName": src.get("Name", ""),
           }
@@ -91,7 +90,7 @@ jobs:
           missing = required - targets
           if missing:
               raise SystemExit("Missing target(s): " + ", ".join(sorted(missing)))
-          print("Stage 10.1 targets verified")
+          print("Stage 10.2 targets verified")
           PY
 
       - name: Build unsigned iPhone host app
@@ -108,38 +107,96 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Embed pre-signed Runner IPA into Pikmin Pilot app bundle
-        run: |
-          set -euxo pipefail
           APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           test -d "$APP"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tee AppBundleIdentifier.txt
+
+      - name: Embed currently signed Runner fallback into host app bundle
+        run: |
+          set -euxo pipefail
+          APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           cp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
           cp PikminPilotEmbeddedRunnerMetadata.plist "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           test -s "$APP/PikminPilotEmbeddedRunner.ipa"
           test -s "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           cmp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
           shasum -a 256 "$APP/PikminPilotEmbeddedRunner.ipa" | tee AppEmbeddedRunnerSHA256.txt
-          echo "Embedded signed Runner copied byte-for-byte into host app bundle."
+          echo "NOTE: embedded payload is the last signed stable fallback. For 6...12 pink-count + speed control, sign/install the Stage 10.2 Runner artifact once."
 
-      - name: Package single Pikmin Pilot IPA
+      - name: Package Pikmin Pilot IPA
         run: |
           set -euxo pipefail
           APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
-          /usr/bin/zip -qry PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa Payload
-          unzip -l PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
+          /usr/bin/zip -qry PikminPilot-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Build unsigned Stage 10.2 XCUITest Runner
+        run: |
+          set -euxo pipefail
+          xcodebuild \
+            -project PikminPilot.xcodeproj \
+            -scheme PikminPilot \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-runner \
+            build-for-testing \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+          RUNNER_APP="$(find build-runner/Build/Products -type d -name '*-Runner.app' -print -quit)"
+          test -n "$RUNNER_APP"
+          test -d "$RUNNER_APP"
+          echo "RUNNER_APP=$RUNNER_APP" >> "$GITHUB_ENV"
+
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_APP/Info.plist" | tee RunnerBundleIdentifier.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$RUNNER_APP/Info.plist" | tee RunnerBundleVersion.txt || true
+          plutil -p "$RUNNER_APP/Info.plist" > RunnerInfoPlist.txt
+
+          TEST_BUNDLE="$(find "$RUNNER_APP/PlugIns" -maxdepth 1 -type d -name '*.xctest' -print -quit)"
+          test -n "$TEST_BUNDLE"
+          TEST_EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$TEST_BUNDLE/Info.plist")"
+          test -f "$TEST_BUNDLE/$TEST_EXEC"
+          {
+            echo "RUNNER_APP=$RUNNER_APP"
+            echo "TEST_BUNDLE=$TEST_BUNDLE"
+            echo "TEST_EXEC=$TEST_EXEC"
+            file "$TEST_BUNDLE/$TEST_EXEC"
+            ls -lh "$TEST_BUNDLE/$TEST_EXEC"
+          } | tee RunnerNestedXCTestLayout.txt
+
+      - name: Package unsigned Stage 10.2 Runner IPA
+        run: |
+          set -euxo pipefail
+          test -n "${RUNNER_APP:-}"
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$RUNNER_APP" Payload/
+          /usr/bin/zip -qry PikminPilotRunner-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned.ipa Payload
+          rm -rf Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage10.1-Pilot-Control-UI-unsigned
+          name: PikminPilot-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned
           path: |
-            PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa
+            PikminPilot-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned.ipa
             AppBundleIdentifier.txt
             EmbeddedRunnerBundleIdentifier.txt
             EmbeddedXCTestBundleIdentifier.txt
             EmbeddedRunnerSHA256.txt
             AppEmbeddedRunnerSHA256.txt
             PikminPilotEmbeddedRunnerMetadata.plist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PikminPilotRunner-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned
+          path: |
+            PikminPilotRunner-Stage10.2-Polished-Control-Pink-Count-Speed-unsigned.ipa
+            RunnerBundleIdentifier.txt
+            RunnerBundleVersion.txt
+            RunnerInfoPlist.txt
+            RunnerNestedXCTestLayout.txt
