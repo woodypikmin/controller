@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 8.2.2 Fresh Pink After Checkpoint
+name: Build Pikmin Pilot Stage 9.0 Integrated Local Tunnel
 
 on:
   workflow_dispatch:
@@ -48,6 +48,7 @@ jobs:
 
           required_targets = {
               "PikminPilot",
+              "PikminPilotTunnel",
               "PikminPilotRunnerUITests",
           }
 
@@ -60,7 +61,7 @@ jobs:
           if "PikminPilot" not in schemes:
               raise SystemExit("Existing PikminPilot scheme is missing")
 
-          print("PikminPilot app scheme + UI test target verified.")
+          print("PikminPilot app + embedded tunnel + UI test targets verified.")
           PY
 
       - name: Build unsigned iPhone app
@@ -76,6 +77,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
+
+      - name: Verify embedded PacketTunnelProvider
+        run: |
+          set -euxo pipefail
+          APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
+          test -d "$APP"
+          APPEX="$(find "$APP/PlugIns" -maxdepth 1 -type d -name '*Tunnel*.appex' -print -quit)"
+          test -n "$APPEX"
+          test -d "$APPEX"
+          test -f "$APPEX/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tee AppBundleIdentifier.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist" | tee TunnelBundleIdentifier.txt
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist" | grep -F 'com.apple.networkextension.packet-tunnel'
+          test -f "$APP/archived-expanded-entitlements.xcent" || true
+          echo "Embedded PacketTunnelProvider layout verified: $APPEX"
 
       - name: Build unsigned XCUITest Runner
         run: |
@@ -124,7 +140,7 @@ jobs:
           mkdir RunnerPayload
           cp -R "$RUNNER_APP" RunnerPayload/
           mv RunnerPayload Payload
-          /usr/bin/zip -qry PikminPilotRunner-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilotRunner-Stage9.0-Integrated-Local-Tunnel-unsigned.ipa Payload
           rm -rf Payload
 
       - name: Package IPA
@@ -133,18 +149,21 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
-          /usr/bin/zip -qry PikminPilot-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilot-Stage9.0-Integrated-Local-Tunnel-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned
-          path: PikminPilot-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned.ipa
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PikminPilotRunner-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned
+          name: PikminPilot-Stage9.0-Integrated-Local-Tunnel-unsigned
           path: |
-            PikminPilotRunner-Stage8.2.2-Fresh-Pink-After-Checkpoint-unsigned.ipa
+            PikminPilot-Stage9.0-Integrated-Local-Tunnel-unsigned.ipa
+            AppBundleIdentifier.txt
+            TunnelBundleIdentifier.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PikminPilotRunner-Stage9.0-Integrated-Local-Tunnel-unsigned
+          path: |
+            PikminPilotRunner-Stage9.0-Integrated-Local-Tunnel-unsigned.ipa
             RunnerBundleIdentifier.txt
             RunnerInfoPlist.txt
             RunnerNestedXCTestLayout.txt
