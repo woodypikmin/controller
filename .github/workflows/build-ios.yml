@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 10.3 Multi Pikmin + Seedling
+name: Build Pikmin Pilot Stage 10.3.1 Seedling Color-Label Safety
 
 on:
   workflow_dispatch:
@@ -90,7 +90,7 @@ jobs:
           missing = required - targets
           if missing:
               raise SystemExit("Missing target(s): " + ", ".join(sorted(missing)))
-          print("Stage 10.3 targets verified")
+          print("Stage 10.3.1 targets verified")
           PY
 
       - name: Build unsigned iPhone host app
@@ -121,7 +121,7 @@ jobs:
           test -s "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           cmp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
           shasum -a 256 "$APP/PikminPilotEmbeddedRunner.ipa" | tee AppEmbeddedRunnerSHA256.txt
-          echo "NOTE: embedded payload is the last signed stable fallback. For multi-Pikmin (2...12) support, sign/install the Stage 10.3 Runner artifact once."
+          echo "NOTE: Stage 10.3.1 is host-only. Keep the already-installed signed Stage 10.3 Runner; no Runner re-sign is required."
 
       - name: Package Pikmin Pilot IPA
         run: |
@@ -130,60 +130,14 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
-          /usr/bin/zip -qry PikminPilot-Stage10.3-Multi-Pikmin-Seedling-unsigned.ipa Payload
-          rm -rf Payload
-
-      - name: Build unsigned Stage 10.3 XCUITest Runner
-        run: |
-          set -euxo pipefail
-          xcodebuild \
-            -project PikminPilot.xcodeproj \
-            -scheme PikminPilot \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build-runner \
-            build-for-testing \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
-
-          RUNNER_APP="$(find build-runner/Build/Products -type d -name '*-Runner.app' -print -quit)"
-          test -n "$RUNNER_APP"
-          test -d "$RUNNER_APP"
-          echo "RUNNER_APP=$RUNNER_APP" >> "$GITHUB_ENV"
-
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_APP/Info.plist" | tee RunnerBundleIdentifier.txt
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$RUNNER_APP/Info.plist" | tee RunnerBundleVersion.txt || true
-          plutil -p "$RUNNER_APP/Info.plist" > RunnerInfoPlist.txt
-
-          TEST_BUNDLE="$(find "$RUNNER_APP/PlugIns" -maxdepth 1 -type d -name '*.xctest' -print -quit)"
-          test -n "$TEST_BUNDLE"
-          TEST_EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$TEST_BUNDLE/Info.plist")"
-          test -f "$TEST_BUNDLE/$TEST_EXEC"
-          {
-            echo "RUNNER_APP=$RUNNER_APP"
-            echo "TEST_BUNDLE=$TEST_BUNDLE"
-            echo "TEST_EXEC=$TEST_EXEC"
-            file "$TEST_BUNDLE/$TEST_EXEC"
-            ls -lh "$TEST_BUNDLE/$TEST_EXEC"
-          } | tee RunnerNestedXCTestLayout.txt
-
-      - name: Package unsigned Stage 10.3 Runner IPA
-        run: |
-          set -euxo pipefail
-          test -n "${RUNNER_APP:-}"
-          rm -rf Payload
-          mkdir Payload
-          cp -R "$RUNNER_APP" Payload/
-          /usr/bin/zip -qry PikminPilotRunner-Stage10.3-Multi-Pikmin-Seedling-unsigned.ipa Payload
+          /usr/bin/zip -qry PikminPilot-Stage10.3.1-Seedling-Color-Label-Safety-unsigned.ipa Payload
           rm -rf Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage10.3-Multi-Pikmin-Seedling-unsigned
+          name: PikminPilot-Stage10.3.1-Seedling-Color-Label-Safety-unsigned
           path: |
-            PikminPilot-Stage10.3-Multi-Pikmin-Seedling-unsigned.ipa
+            PikminPilot-Stage10.3.1-Seedling-Color-Label-Safety-unsigned.ipa
             AppBundleIdentifier.txt
             EmbeddedRunnerBundleIdentifier.txt
             EmbeddedXCTestBundleIdentifier.txt
@@ -191,12 +145,3 @@ jobs:
             AppEmbeddedRunnerSHA256.txt
             PikminPilotEmbeddedRunnerMetadata.plist
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PikminPilotRunner-Stage10.3-Multi-Pikmin-Seedling-unsigned
-          path: |
-            PikminPilotRunner-Stage10.3-Multi-Pikmin-Seedling-unsigned.ipa
-            RunnerBundleIdentifier.txt
-            RunnerBundleVersion.txt
-            RunnerInfoPlist.txt
-            RunnerNestedXCTestLayout.txt
