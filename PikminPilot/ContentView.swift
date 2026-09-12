@@ -6,8 +6,10 @@ struct ContentView: View {
     @StateObject private var pairing = PairingRecordStore()
     @StateObject private var tunnel = PikminTunnelManager.shared
     @StateObject private var loop = Stage8FullLoopController()
+    @StateObject private var runnerPackage = RunnerPackageStore()
 
-    @State private var showImporter = false
+    @State private var showPairingImporter = false
+    @State private var showRunnerImporter = false
     @State private var status = UserDefaults.standard.string(forKey: Stage8FullLoopController.persistedStatusKey) ?? "尚未測試"
     @State private var busy = false
     @State private var screenshotImage: UIImage?
@@ -21,10 +23,10 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 9.0.1 — SIGNING-AWARE TUNNEL + FALLBACK")
+                        Text("Stage 9.1 — PHONE-LOCAL RUNNER SELF-INSTALL")
                             .font(.headline)
 
-                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop。內嵌 PacketTunnelProvider 只在簽章 provisioning 真正含 Network Extension entitlement 時啟用；目前 Sideloadly build 若無此 entitlement，會自動 fallback 到已啟動的 App Store LocalDevVPN。WDA 仍為 OFF。")
+                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop。這版新增 iPhone 本機 AFC + InstallationProxy 安裝 Runner 的路徑：先匯入一個已簽名 Runner IPA，Pikmin Pilot 自己就能安裝/更新 Runner。這是往最終單一安裝包收斂的關鍵 bootstrap。WDA 仍為 OFF。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -62,7 +64,7 @@ struct ContentView: View {
                 Section("1. Pairing Record") {
                     LabeledContent("狀態", value: pairing.status)
 
-                    Button("匯入 RPPairing Record") { showImporter = true }
+                    Button("匯入 RPPairing Record") { showPairingImporter = true }
 
                     Button("VALIDATE WITH IDEVICE") {
                         Task { await validatePairing() }
@@ -78,7 +80,33 @@ struct ContentView: View {
                     }
                 }
 
-                Section("2. Phone-local Engine") {
+                Section("2. Runner Bootstrap / Single-Install Path") {
+                    LabeledContent("Runner package", value: runnerPackage.status)
+
+                    Button("IMPORT SIGNED RUNNER IPA") {
+                        showRunnerImporter = true
+                    }
+                    .disabled(busy || loop.isRunning)
+
+                    Button("PHONE-LOCAL → INSTALL / UPDATE RUNNER") {
+                        Task { await installImportedRunner() }
+                    }
+                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil || runnerPackage.runnerURL == nil)
+
+                    if runnerPackage.runnerURL != nil {
+                        Button("移除已匯入 Runner IPA", role: .destructive) {
+                            try? runnerPackage.remove()
+                            status = "已移除 Pikmin Pilot 內保存的 Runner IPA"
+                        }
+                        .disabled(loop.isRunning)
+                    }
+
+                    Text("Stage 9.1 先證明：Runner 不需要再由電腦執行安裝動作。Pikmin Pilot 會用既有 phone-local RSD，透過 AFC 上傳到 PublicStaging，再由 InstallationProxy 安裝。之後把 signed Runner 直接內嵌進最終包，就能把這個匯入步驟也消掉。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("3. Phone-local Engine") {
                     LabeledContent("目標", value: "10.7.0.1:49152")
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -118,8 +146,8 @@ struct ContentView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Button("STAGE 9.0.1 → START PILOT (AUTO TUNNEL + RSD + LOOP)") {
-                        Task { await startStage90Auto() }
+                    Button("STAGE 9.1 → START PILOT") {
+                        Task { await startStage91Auto() }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
@@ -194,7 +222,7 @@ struct ContentView: View {
                     if busy || loop.isRunning {
                         HStack {
                             ProgressView()
-                            Text(loop.isRunning ? "Stage 9.0 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
+                            Text(loop.isRunning ? "Stage 9.1 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
                         }
                     }
                 }
@@ -212,8 +240,8 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 9.0 Test") {
-                    Text("1. 目前 Sideloadly 若沒有 Network Extension entitlement，請像以前一樣先開 App Store LocalDevVPN。\n2. Pairing Record 沿用目前已成功的檔案。\n3. 開 Pikmin Bloom 到探險水果列表後回 Pikmin Pilot。\n4. 按 STAGE 9.0.1 → START PILOT：它先嘗試內建 Tunnel；若簽章權限不足，會直接 probe 10.7.0.1:49152，外部 LocalDevVPN 已連線就繼續 Stage 8.2.2 loop。\n5. 未來 TestFlight/正式簽章取得 Network Extension capability 後，同一份程式會改走內建 Tunnel。")
+                Section("Stage 9.1 Test") {
+                    Text("1. 開發期仍先開目前可用的 LocalDevVPN。\n2. Runner 已安裝的人可以直接按 START PILOT，不需要重裝。\n3. 要測新的 self-install：用新版 BAT 產生 *-SIGNED.ipa，放到 iPhone Files，按 IMPORT SIGNED RUNNER IPA，再按 PHONE-LOCAL → INSTALL / UPDATE RUNNER。\n4. START PILOT 現在會先確認 Runner；若 Runner 缺少但已匯入 signed IPA，它會自動 phone-local 安裝，再開始穩定的 Stage 8.2.2 loop。")
                 }
 
                 Section("Credits") {
@@ -233,11 +261,12 @@ struct ContentView: View {
                     Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.2.2：完整 loop 實機穩定 ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 9.0.1：Network Extension entitlement-aware + external LocalDevVPN fallback", systemImage: "network")
+                    Label("Stage 9.1：AFC + InstallationProxy phone-local Runner self-install", systemImage: "shippingbox.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
             .fileImporter(
-                isPresented: $showImporter,
+                isPresented: $showPairingImporter,
                 allowedContentTypes: [.data, .propertyList, .xml],
                 allowsMultipleSelection: false
             ) { result in
@@ -253,6 +282,24 @@ struct ContentView: View {
                     }
                 case .failure(let error):
                     status = "匯入失敗：\(error.localizedDescription)"
+                }
+            }
+            .fileImporter(
+                isPresented: $showRunnerImporter,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    do {
+                        try runnerPackage.importIPA(from: url)
+                        status = "SIGNED RUNNER IPA IMPORTED ✅ • ready for phone-local install"
+                    } catch {
+                        status = "Runner IPA 匯入失敗：\(error.localizedDescription)"
+                    }
+                case .failure(let error):
+                    status = "Runner IPA 匯入失敗：\(error.localizedDescription)"
                 }
             }
         }
@@ -283,40 +330,68 @@ struct ContentView: View {
     @MainActor
     private func startIntegratedTunnel() async {
         busy = true
-        status = "STAGE 9.0.1 TUNNEL • attempting embedded PacketTunnelProvider…"
+        status = "STAGE 9.1 TUNNEL • attempting embedded PacketTunnelProvider…"
         defer { busy = false }
 
         do {
             try await tunnel.ensureStarted()
-            status = "STAGE 9.0.1 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR)"
+            status = "STAGE 9.1 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR)"
         } catch {
             await tunnel.refresh()
             let diagnostic = tunnel.diagnostics(for: error)
             if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
-                status = "STAGE 9.0.1 INTEGRATED TUNNEL UNAVAILABLE • signing/provisioning lacks Network Extension entitlement • \(diagnostic) • development fallback=use App Store LocalDevVPN"
+                status = "STAGE 9.1 INTEGRATED TUNNEL UNAVAILABLE • signing/provisioning lacks Network Extension entitlement • \(diagnostic) • development fallback=use App Store LocalDevVPN"
             } else {
-                status = "STAGE 9.0.1 TUNNEL FAILED • \(diagnostic) • tunnel=\(tunnel.detail)"
+                status = "STAGE 9.1 TUNNEL FAILED • \(diagnostic) • tunnel=\(tunnel.detail)"
             }
         }
     }
 
     @MainActor
-    private func startStage90Auto() async {
+    private func installImportedRunner() async {
+        guard let pairingURL = pairing.pairingURL,
+              let runnerURL = runnerPackage.runnerURL else { return }
+
+        busy = true
+        defer { busy = false }
+        status = "STAGE 9.1 RUNNER BOOTSTRAP • AFC upload → InstallationProxy install…"
+
+        let engine = IDeviceEngine(pairingPath: pairingURL.path)
+        let rsd = await engine.probeRSD()
+        guard rsd.ok else {
+            status = "STAGE 9.1 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
+            return
+        }
+
+        let install = await engine.installXCTestRunnerIPA(localPath: runnerURL.path)
+        guard install.ok else {
+            status = install.message
+            return
+        }
+
+        let verify = await engine.discoverXCTestRunner()
+        status = verify.ok
+            ? "\(install.message) • verify=\(verify.message)"
+            : "\(install.message) • POST-INSTALL VERIFY FAILED • \(verify.message)"
+    }
+
+    @MainActor
+    private func startStage91Auto() async {
         guard let url = pairing.pairingURL else { return }
         busy = true
-        status = "STAGE 9.0.1 START • try integrated tunnel → RSD probe → stable 8.2.2 loop"
+        status = "STAGE 9.1 START • tunnel → RSD → Runner preflight/self-install → stable 8.2.2 loop"
 
         var integratedConnected = false
         do {
             try await tunnel.ensureStarted()
             integratedConnected = true
-            status = "STAGE 9.0.1 • integrated tunnel CONNECTED ✅ • probing phone-local RSD 10.7.0.1:49152…"
+            status = "STAGE 9.1 • integrated tunnel CONNECTED ✅ • probing RSD…"
         } catch {
             let diagnostic = tunnel.diagnostics(for: error)
             if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
-                status = "STAGE 9.0.1 • integrated tunnel not authorized by current signing profile • \(diagnostic) • probing external LocalDevVPN path…"
+                status = "STAGE 9.1 • integrated tunnel blocked by current signing • probing existing LocalDevVPN path… • \(diagnostic)"
             } else {
-                status = "STAGE 9.0.1 • integrated tunnel unavailable • \(diagnostic) • probing existing 10.7.0.1 path…"
+                status = "STAGE 9.1 • integrated tunnel unavailable • probing existing 10.7.0.1 path… • \(diagnostic)"
             }
         }
 
@@ -324,17 +399,38 @@ struct ContentView: View {
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
             busy = false
-            if integratedConnected {
-                status = "STAGE 9.0.1 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
-            } else {
-                status = "STAGE 9.0.1 WAITING FOR LOCAL TUNNEL • integrated tunnel unavailable under current signing AND external 10.7.0.1:49152 is offline • open/connect App Store LocalDevVPN, then press START PILOT again • \(rsd.message)"
-            }
+            status = integratedConnected
+                ? "STAGE 9.1 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
+                : "STAGE 9.1 WAITING FOR LOCAL TUNNEL • open/connect LocalDevVPN, then START PILOT again • \(rsd.message)"
             return
         }
 
-        status = integratedConnected
-            ? "STAGE 9.0.1 • integrated tunnel ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
-            : "STAGE 9.0.1 • external LocalDevVPN path ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
+        status = "STAGE 9.1 • RSD ✅ • checking installed XCTest Runner…"
+        var runner = await engine.discoverXCTestRunner()
+        if !runner.ok {
+            if let imported = runnerPackage.runnerURL {
+                status = "STAGE 9.1 • Runner missing → self-installing imported signed IPA via AFC + InstallationProxy…"
+                let install = await engine.installXCTestRunnerIPA(localPath: imported.path)
+                guard install.ok else {
+                    busy = false
+                    status = "STAGE 9.1 FAILED • phase=runner-self-install • \(install.message)"
+                    return
+                }
+                runner = await engine.discoverXCTestRunner()
+                guard runner.ok else {
+                    busy = false
+                    status = "STAGE 9.1 FAILED • phase=runner-post-install-verify • \(runner.message)"
+                    return
+                }
+                status = "STAGE 9.1 • Runner self-install ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
+            } else {
+                busy = false
+                status = "STAGE 9.1 NEEDS RUNNER • no installed Runner and no signed Runner IPA imported • use IMPORT SIGNED RUNNER IPA once, then START PILOT again • \(runner.message)"
+                return
+            }
+        } else {
+            status = "STAGE 9.1 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
+        }
 
         busy = false
         loop.start(

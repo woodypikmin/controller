@@ -214,7 +214,7 @@ def find_ios() -> str:
     return exe
 
 
-def run_sign_install(ios: str, ipa: Path, p12: Path, profile: Path, bundle_id: str) -> str:
+def run_sign_install(ios: str, ipa: Path, p12: Path, profile: Path, bundle_id: str, signed_output: Path) -> str:
     args = [
         ios,
         "sign",
@@ -224,6 +224,7 @@ def run_sign_install(ios: str, ipa: Path, p12: Path, profile: Path, bundle_id: s
         f"--profile={profile}",
         f"--p12password={P12_PASSWORD}",
         f"--bundleid={bundle_id}",
+        f"--output={signed_output}",
         "--install",
     ]
     proc = subprocess.run(
@@ -281,12 +282,17 @@ def main() -> int:
             build_p12(openssl, key, certs, p12)
 
             log("sign", "recursively signing outer Runner + PlugIns/*.xctest with the SAME Team ID")
-            out = run_sign_install(ios, ipa, p12, profile, info["bundle_id"])
+            signed_output = ipa.with_name(ipa.stem + "-SIGNED.ipa")
+            out = run_sign_install(ios, ipa, p12, profile, info["bundle_id"], signed_output)
             tail = "\n".join(out.splitlines()[-12:])
             if tail:
                 print(tail)
 
+        if not signed_output.exists():
+            raise FixError(f"go-ios reported success but signed IPA was not created: {signed_output}")
         log("done", f"installed recursively-signed Runner as {info['bundle_id']}")
+        log("output", f"SIGNED IPA SAVED: {signed_output}")
+        log("pilot", "Copy that *-SIGNED.ipa to iPhone Files to test Pikmin Pilot Stage 9.1 phone-local self-install/update")
         log("next", "Close this window. On iPhone: LocalDevVPN -> Pikmin Pilot -> CONNECT PHONE-LOCAL RSD -> RUN XCTEST -> PIKMIN CENTER TAP")
         return 0
     except subprocess.TimeoutExpired as exc:

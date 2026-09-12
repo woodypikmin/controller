@@ -321,6 +321,7 @@ cp "$ROOT/RustPatch/pilot_xctest_dtx.rs" ffi/src/pilot_xctest_dtx.rs
 cp "$ROOT/RustPatch/pilot_xctest_runner.rs" ffi/src/pilot_xctest_runner.rs
 cp "$ROOT/RustPatch/pilot_xctest_metadata.rs" ffi/src/pilot_xctest_metadata.rs
 cp "$ROOT/RustPatch/pilot_xctest_execute.rs" ffi/src/pilot_xctest_execute.rs
+cp "$ROOT/RustPatch/pilot_runner_install.rs" ffi/src/pilot_runner_install.rs
 
 # Add a focused FFI-only feature under the existing [features] table.
 python3 - <<'PY'
@@ -332,7 +333,7 @@ if needle not in s:
     raise SystemExit("ffi/Cargo.toml has no [features] table")
 s = s.replace(
     needle,
-    needle + 'pilot_xctest = ["idevice/xctest"]\n',
+    needle + 'pilot_xctest = ["idevice/xctest", "idevice/afc"]\n',
     1,
 )
 p.write_text(s)
@@ -346,6 +347,23 @@ mod pilot_xctest_dtx;
 mod pilot_xctest_runner;
 mod pilot_xctest_metadata;
 mod pilot_xctest_execute;
+mod pilot_runner_install;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pilot_runner_install_ipa(
+    adapter: *mut core_device_proxy::AdapterHandle,
+    handshake: *mut rsd::RsdHandshakeHandle,
+    local_ipa_path: *const std::ffi::c_char,
+    message: *mut std::ffi::c_char,
+    message_capacity: usize,
+) -> i32 {
+    unsafe {
+        pilot_runner_install::pilot_runner_install_ipa_impl(
+            adapter, handshake, local_ipa_path, message, message_capacity,
+        )
+    }
+}
+
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pilot_xctest_service_probe(

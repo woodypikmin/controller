@@ -57,3 +57,14 @@ D. On iPhone test exactly as before:
    -> RUN XCTEST -> PIKMIN CENTER TAP
 
 You do not need to redo RPPairing, RSD, DTX probes, or Runner discovery.
+
+
+STAGE 9.1 OUTPUT
+----------------
+This version also writes a recursively signed IPA next to the unsigned input:
+  <original-name>-SIGNED.ipa
+
+You can copy that SIGNED IPA to iPhone Files and import it into Pikmin Pilot Stage 9.1.
+Pikmin Pilot can then upload it through phone-local AFC/PublicStaging and ask
+InstallationProxy to install/update the Runner itself. This proves the transport
+needed for the later one-user-facing-install package.

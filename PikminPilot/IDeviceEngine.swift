@@ -155,6 +155,23 @@ actor IDeviceEngine {
         }
     }
 
+    func installXCTestRunnerIPA(localPath: String) -> Result {
+        callBridge { path, message, capacity in
+            host.withCString { hostCString in
+                localPath.withCString { ipaCString in
+                    PPInstallPhoneLocalXCTestRunnerIPA(
+                        path,
+                        hostCString,
+                        port,
+                        ipaCString,
+                        message,
+                        capacity
+                    )
+                }
+            }
+        }
+    }
+
     func discoverXCTestRunner() -> Result {
         callBridge { path, message, capacity in
             host.withCString { hostCString in

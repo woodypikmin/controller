@@ -68,6 +68,19 @@ int32_t PPBootstrapPhoneLocalXCTestDTX(
 );
 
 
+/// Uploads an already-signed Runner IPA through AFC/PublicStaging and asks
+/// InstallationProxy to install/update it over the same phone-local RSD tunnel.
+/// This is the bootstrap path toward a one-user-facing-install package.
+int32_t PPInstallPhoneLocalXCTestRunnerIPA(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *localIPAPath,
+    char *message,
+    size_t messageCapacity
+);
+
+
 /// Uses InstallationProxy over the existing phone-local RSD tunnel to locate
 /// the signed Pikmin Pilot XCUITest Runner installed on the iPhone.
 int32_t PPDiscoverPhoneLocalXCTestRunner(

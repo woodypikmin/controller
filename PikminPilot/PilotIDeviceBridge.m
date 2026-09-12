@@ -67,6 +67,15 @@ extern int32_t pilot_xctest_execute_dispatch_tail(
     size_t message_capacity
 );
 
+// Stage 9.1 phone-local Runner self-install export injected into idevice-ffi.
+extern int32_t pilot_runner_install_ipa(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    const char *local_ipa_path,
+    char *message,
+    size_t message_capacity
+);
+
 // Custom Stage 7.6 runner discovery export injected into idevice-ffi.
 extern int32_t pilot_xctest_runner_discovery(
     struct AdapterHandle *adapter,
@@ -665,6 +674,38 @@ int32_t PPBootstrapPhoneLocalXCTestDTX(
             message,
             messageCapacity
         );
+
+    rsd_handshake_free(handshake);
+    adapter_free(adapter);
+    return result;
+}
+
+
+int32_t PPInstallPhoneLocalXCTestRunnerIPA(
+    const char *pairingPath,
+    const char *host,
+    uint16_t port,
+    const char *localIPAPath,
+    char *message,
+    size_t messageCapacity
+) {
+    if (localIPAPath == NULL || localIPAPath[0] == '\0') {
+        PPWriteMessage(message, messageCapacity, @"Runner IPA path is empty");
+        return -120;
+    }
+
+    struct AdapterHandle *adapter = NULL;
+    struct RsdHandshakeHandle *handshake = NULL;
+    int32_t tunnelResult = PPCreateTunnel(
+        pairingPath, host, port, &adapter, &handshake, message, messageCapacity
+    );
+    if (tunnelResult != 0) {
+        return tunnelResult;
+    }
+
+    int32_t result = pilot_runner_install_ipa(
+        adapter, handshake, localIPAPath, message, messageCapacity
+    );
 
     rsd_handshake_free(handshake);
     adapter_free(adapter);
