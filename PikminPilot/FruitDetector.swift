@@ -906,11 +906,19 @@ final class FruitDetector {
             .joined(separator: " ")
     }
 
+    /// Expedition-list seedling labels are color-qualified (for example
+    /// `灰色花苗`, `藍色花苗`, `粉紅色花苗`). The screen also has a top-level
+    /// navigation/tab label that is only `花苗`; that label opens the seedling
+    /// inventory/view page and must never be treated as a transport target.
+    ///
+    /// Require `色花苗` after whitespace/newline normalization so plain
+    /// `花苗` is ignored completely.
     static func isSeedlingLabel(_ text: String) -> Bool {
         let normalized = text
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "\n", with: "")
-        return normalized.contains("花苗")
+            .replacingOccurrences(of: "\t", with: "")
+        return normalized.contains("色花苗")
     }
 
     static func isKnownFruitLabel(_ text: String) -> Bool {
@@ -1231,7 +1239,7 @@ final class FruitDetector {
         )
 
         // Merge component-backed and OCR-inferred seedlings without exposing
-        // duplicates. OCR is the authoritative safety signal (`花苗`).
+        // duplicates. OCR is the authoritative safety signal (`色花苗`).
         var seedlings = objects.seedlings
         for item in inferredSeedlings {
             let duplicate = seedlings.contains { old in

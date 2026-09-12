@@ -37,8 +37,8 @@ targets:
         - -lc++
         - -lz
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: '103'
-        MARKETING_VERSION: '10.3'
+        CURRENT_PROJECT_VERSION: '1031'
+        MARKETING_VERSION: '10.3.1'
     scheme:
       testTargets:
       - PikminPilotRunnerUITests

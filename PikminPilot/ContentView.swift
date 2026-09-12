@@ -141,7 +141,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Pikmin Pilot")
                         .font(.title2.bold())
-                    Text("Stage 10.3 • Multi-Pikmin Dashboard")
+                    Text("Stage 10.3.1 • Multi-Pikmin Dashboard")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -238,9 +238,9 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     .disabled(loop.isRunning || busy)
                     Text(selectedCargoMode == .seedling
-                         ? "花苗以畫面上的「某色花苗」文字確認；BUSY / COMPLETE 卡片仍不會點。"
+                         ? "花苗只接受「某色花苗」文字（必須含「色花苗」）；上方單獨的「花苗」分頁永遠不點。"
                          : selectedCargoMode == .both
-                         ? "水果與 OCR 確認的花苗都可搬；依畫面由上到下選第一個安全 AVAILABLE。"
+                         ? "水果＋花苗模式只接受 OCR 含「色花苗」的盆栽；上方單獨「花苗」分頁永遠排除。"
                          : "沿用已驗證的水果 card-first AVAILABLE 判定。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -452,7 +452,7 @@ struct ContentView: View {
                 LabeledContent("Runner source", value: runnerPackage.sourceLabel)
                 LabeledContent("Runner signing", value: runnerPackage.provisioningStatus)
 
-                Text("Stage 10.3 的白/粉紅 6–12、紫/岩 2–12 與多目標模式需要新版 Runner。GitHub 產出的 Stage 10.3 Runner 仍用既有 BAT 簽一次並更新；驗證後再重新內建。")
+                Text("Stage 10.3 的白/粉紅 6–12、紫/岩 2–12 與多目標模式使用同一個 Runner；10.3.1 只修花苗 OCR 安全條件，已安裝的 Stage 10.3 Runner 直接沿用，不需 BAT、不需重新簽。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -610,12 +610,12 @@ struct ContentView: View {
 
         busy = true
         defer { busy = false }
-        status = "STAGE 10.3 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
+        status = "STAGE 10.3.1 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
 
         let engine = IDeviceEngine(pairingPath: pairingURL.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
-            status = "STAGE 10.3 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
+            status = "STAGE 10.3.1 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
             return
         }
 
@@ -635,47 +635,47 @@ struct ContentView: View {
     private func startStage101Auto() async {
         guard let url = pairing.pairingURL else { return }
         busy = true
-        status = "STAGE 10.3 START • \(runSummaryLabel) • external LocalDevVPN → RSD → Runner → Stage 8.2.2 detector loop"
+        status = "STAGE 10.3.1 START • \(runSummaryLabel) • external LocalDevVPN → RSD → Runner → Stage 8.2.2 detector loop"
 
         let engine = IDeviceEngine(pairingPath: url.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
             busy = false
-            status = "STAGE 10.3 WAITING FOR LOCALDEVVPN • open/connect LocalDevVPN, then press START PILOT again • \(rsd.message)"
+            status = "STAGE 10.3.1 WAITING FOR LOCALDEVVPN • open/connect LocalDevVPN, then press START PILOT again • \(rsd.message)"
             return
         }
 
-        status = "STAGE 10.3 • RSD ✅ • checking installed XCTest Runner…"
+        status = "STAGE 10.3.1 • RSD ✅ • checking installed XCTest Runner…"
         var runner = await engine.discoverXCTestRunner()
         if !runner.ok {
             if runnerPackage.source == .embedded && runnerPackage.isEmbeddedRunnerExpired {
                 busy = false
-                status = "STAGE 10.3 RUNNER EXPIRED • embedded free-account provisioning has expired • \(runnerPackage.provisioningStatus) • refresh package before auto-install"
+                status = "STAGE 10.3.1 RUNNER EXPIRED • embedded free-account provisioning has expired • \(runnerPackage.provisioningStatus) • refresh package before auto-install"
                 return
             }
 
             if let package = runnerPackage.runnerURL {
-                status = "STAGE 10.3 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
+                status = "STAGE 10.3.1 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
                 let install = await engine.installXCTestRunnerIPA(localPath: package.path)
                 guard install.ok else {
                     busy = false
-                    status = "STAGE 10.3 FAILED • phase=runner-self-install • \(install.message)"
+                    status = "STAGE 10.3.1 FAILED • phase=runner-self-install • \(install.message)"
                     return
                 }
                 runner = await engine.discoverXCTestRunner()
                 guard runner.ok else {
                     busy = false
-                    status = "STAGE 10.3 FAILED • phase=runner-post-install-verify • \(runner.message)"
+                    status = "STAGE 10.3.1 FAILED • phase=runner-post-install-verify • \(runner.message)"
                     return
                 }
-                status = "STAGE 10.3 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
+                status = "STAGE 10.3.1 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
             } else {
                 busy = false
-                status = "STAGE 10.3 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
+                status = "STAGE 10.3.1 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
                 return
             }
         } else {
-            status = "STAGE 10.3 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
+            status = "STAGE 10.3.1 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
         }
 
         busy = false
