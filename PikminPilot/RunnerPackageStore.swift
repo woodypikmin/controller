@@ -10,10 +10,13 @@ final class RunnerPackageStore: ObservableObject {
     @Published private(set) var runnerURL: URL?
     @Published private(set) var source: Source?
     @Published private(set) var status = "找不到 Runner IPA"
+    @Published private(set) var provisioningStatus = "Runner 簽章資訊尚未載入"
+    @Published private(set) var embeddedExpirationDate: Date?
 
     private let importedFileName = "PikminPilotRunner-signed-override.ipa"
     private let embeddedResourceName = "PikminPilotEmbeddedRunner"
     private let embeddedResourceExtension = "ipa"
+    private let metadataResourceName = "PikminPilotEmbeddedRunnerMetadata"
 
     init() {
         refresh()
@@ -25,10 +28,7 @@ final class RunnerPackageStore: ObservableObject {
     }
 
     var embeddedURL: URL? {
-        Bundle.main.url(
-            forResource: embeddedResourceName,
-            withExtension: embeddedResourceExtension
-        )
+        Bundle.main.url(forResource: embeddedResourceName, withExtension: embeddedResourceExtension)
     }
 
     var sourceLabel: String {
@@ -39,9 +39,16 @@ final class RunnerPackageStore: ObservableObject {
         }
     }
 
+    var isEmbeddedRunnerExpired: Bool {
+        guard let embeddedExpirationDate else { return false }
+        return embeddedExpirationDate <= Date()
+    }
+
     func refresh() {
-        // Development override wins so we can test a newly signed Runner without
-        // rebuilding the whole host app. Normal users never need this path.
+        loadEmbeddedMetadata()
+
+        // Development override wins so a refreshed/newly signed Runner can be
+        // tested without rebuilding the host. Normal use stays on embedded.
         if FileManager.default.fileExists(atPath: importedURL.path) {
             runnerURL = importedURL
             source = .importedOverride
@@ -83,6 +90,42 @@ final class RunnerPackageStore: ObservableObject {
             try FileManager.default.removeItem(at: importedURL)
         }
         refresh()
+    }
+
+    private func loadEmbeddedMetadata() {
+        guard let url = Bundle.main.url(forResource: metadataResourceName, withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            provisioningStatus = "Runner 簽章資訊不可用"
+            embeddedExpirationDate = nil
+            return
+        }
+
+        let expiration = plist["ExpirationDate"] as? Date
+        embeddedExpirationDate = expiration
+        let team = plist["TeamIdentifier"] as? String ?? "?"
+
+        guard let expiration else {
+            provisioningStatus = "team=\(team) • expiration=unknown"
+            return
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_Hant_TW")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let remaining = expiration.timeIntervalSinceNow
+        if remaining <= 0 {
+            provisioningStatus = "EXPIRED • \(formatter.string(from: expiration)) • team=\(team)"
+        } else {
+            let hours = Int(remaining / 3600)
+            if hours >= 48 {
+                provisioningStatus = "約 \(hours / 24) 天後到期 • \(formatter.string(from: expiration)) • team=\(team)"
+            } else {
+                provisioningStatus = "約 \(hours) 小時後到期 • \(formatter.string(from: expiration)) • team=\(team)"
+            }
+        }
     }
 
     private func sizeStatus(prefix: String, url: URL) -> String {

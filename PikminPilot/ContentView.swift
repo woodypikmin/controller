@@ -4,7 +4,6 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var pairing = PairingRecordStore()
-    @StateObject private var tunnel = PikminTunnelManager.shared
     @StateObject private var loop = Stage8FullLoopController()
     @StateObject private var runnerPackage = RunnerPackageStore()
 
@@ -23,40 +22,20 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 9.2 — EMBEDDED RUNNER AUTO-BOOTSTRAP")
+                        Text("Stage 10.0 — FREE APPLE ID STABLE PACKAGE")
                             .font(.headline)
 
-                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop。這版把已簽名 Runner IPA 直接內嵌進 Pikmin Pilot；START PILOT 發現 Runner 缺少時，會從 App bundle 取出 Runner，經 phone-local AFC + InstallationProxy 自動安裝。正常使用不再需要 IMPORT Runner。WDA 仍為 OFF。")
+                        Text("Free Apple ID 模式：保留已跑順的 Stage 8.2.2 loop + embedded Runner auto-bootstrap。因 Personal Team 不支援 Network Extension provider，本版不再嘗試內建 VPN；開發/日常使用只要先開既有 LocalDevVPN，再按 START PILOT。主 App 不再帶無法使用的 PacketTunnelProvider entitlement。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 6)
                 }
 
-                Section("0. Local Tunnel / Signing Diagnostics") {
-                    LabeledContent("Tunnel", value: tunnel.state.rawValue)
-                    LabeledContent("Provider", value: tunnel.providerBundleID)
-                    LabeledContent("Interface", value: tunnel.interfaceCIDR)
-                    LabeledContent("Phone peer", value: tunnel.peerCIDR)
-
-                    Text(tunnel.detail)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-
-                    Button("TRY INTEGRATED TUNNEL") {
-                        Task { await startIntegratedTunnel() }
-                    }
-                    .disabled(busy || loop.isRunning)
-
-                    if tunnel.state == .connected || tunnel.state == .connecting {
-                        Button("STOP INTEGRATED TUNNEL", role: .destructive) {
-                            tunnel.stop()
-                        }
-                        .disabled(loop.isRunning)
-                    }
-
-                    Text("重要：把 entitlement 寫進原始碼並不代表 Sideloadly 的 provisioning profile 會授權它。若顯示 NEConfigurationErrorDomain Code=10 / permission denied，代表目前簽章沒有 Network Extension 權限；這不是 RSD/loop engine 壞掉。開發期可繼續使用 App Store LocalDevVPN，START PILOT 會自動 fallback。未來 TestFlight/正式簽章會再啟用內建 Tunnel。")
+                Section("0. Runtime Mode") {
+                    LabeledContent("模式", value: "Free Apple ID / Personal Team")
+                    LabeledContent("RSD", value: "10.7.0.1:49152")
+                    Text("先開已經可用的 LocalDevVPN。Pikmin Pilot 會直接 probe RSD；不再嘗試目前必定 permission denied 的內建 PacketTunnelProvider。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -80,10 +59,11 @@ struct ContentView: View {
                     }
                 }
 
-                Section("2. Embedded Runner / Single-Install Path") {
+                Section("2. Embedded Runner") {
                     LabeledContent("Runner package", value: runnerPackage.status)
 
                     LabeledContent("Runner source", value: runnerPackage.sourceLabel)
+                    LabeledContent("Runner signing", value: runnerPackage.provisioningStatus)
 
                     Button("PHONE-LOCAL → INSTALL / UPDATE EMBEDDED RUNNER") {
                         Task { await installAvailableRunner() }
@@ -105,12 +85,12 @@ struct ContentView: View {
                         }
                     }
 
-                    Text("Stage 9.2：正常使用不需要選 Runner 檔案。Signed Runner 已經放在 Pikmin Pilot App bundle 裡；若手機沒有 Runner，START PILOT 會自動從 bundle 取出並 phone-local 安裝。Advanced override 只留給開發測試新版 Runner。")
+                    Text("正常使用不需要手動安裝第二個 Runner IPA。START PILOT 發現 Runner 缺少時，會直接從 App bundle 自動安裝。Free Apple ID provisioning 會到期，所以這裡會顯示目前內建 Runner 的簽章到期時間；下一階段會把 Windows refresh 簡化成單一工具。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("3. Phone-local Engine") {
+                Section("3. Pikmin Pilot") {
                     LabeledContent("目標", value: "10.7.0.1:49152")
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -150,8 +130,8 @@ struct ContentView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Button("STAGE 9.2 → START PILOT") {
-                        Task { await startStage92Auto() }
+                    Button("START PILOT") {
+                        Task { await startStage100Auto() }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
@@ -226,7 +206,7 @@ struct ContentView: View {
                     if busy || loop.isRunning {
                         HStack {
                             ProgressView()
-                            Text(loop.isRunning ? "Stage 9.2 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
+                            Text(loop.isRunning ? "Pikmin Pilot 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
                         }
                     }
                 }
@@ -244,8 +224,8 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Stage 9.2 Test") {
-                    Text("1. 開發期仍先開目前可用的 LocalDevVPN。\n2. 正常情況只要安裝這一個 Pikmin Pilot IPA；Runner payload 已內建。\n3. START PILOT 會先確認 Runner；若缺少，就自動從 App bundle 安裝 signed Runner，再開始穩定的 Stage 8.2.2 loop。\n4. Advanced override 只有開發 Runner 新版時才需要。")
+                Section("Stage 10.0 Test") {
+                    Text("1. 先開 LocalDevVPN。\n2. 打開 Pikmin Pilot，按 START PILOT。\n3. App 會自動 probe RSD、確認/自動安裝 embedded Runner，再進入穩定 Stage 8.2.2 loop。\n4. 不需要再按 integrated tunnel，也不需要手動安裝第二個 Runner IPA。")
                 }
 
                 Section("Credits") {
@@ -264,9 +244,9 @@ struct ContentView: View {
                     Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.2.2：完整 loop 實機穩定 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 9.0.1：Network Extension entitlement-aware + external LocalDevVPN fallback", systemImage: "network")
+                    Label("Stage 10.0：Personal Team 模式移除不可用 Network Extension entitlement", systemImage: "network")
                     Label("Stage 9.1：AFC + InstallationProxy phone-local Runner self-install ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 9.2：signed Runner embedded in host + auto-bootstrap", systemImage: "shippingbox.and.arrow.backward.fill")
+                    Label("Stage 10.0：signed Runner embedded in host + auto-bootstrap ✅", systemImage: "shippingbox.and.arrow.backward.fill")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -308,9 +288,6 @@ struct ContentView: View {
                 }
             }
         }
-        .task {
-            await tunnel.refresh()
-        }
     }
 
 
@@ -333,38 +310,18 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startIntegratedTunnel() async {
-        busy = true
-        status = "STAGE 9.2 TUNNEL • attempting embedded PacketTunnelProvider…"
-        defer { busy = false }
-
-        do {
-            try await tunnel.ensureStarted()
-            status = "STAGE 9.2 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR)"
-        } catch {
-            await tunnel.refresh()
-            let diagnostic = tunnel.diagnostics(for: error)
-            if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
-                status = "STAGE 9.2 INTEGRATED TUNNEL UNAVAILABLE • signing/provisioning lacks Network Extension entitlement • \(diagnostic) • development fallback=use App Store LocalDevVPN"
-            } else {
-                status = "STAGE 9.2 TUNNEL FAILED • \(diagnostic) • tunnel=\(tunnel.detail)"
-            }
-        }
-    }
-
-    @MainActor
     private func installAvailableRunner() async {
         guard let pairingURL = pairing.pairingURL,
               let runnerURL = runnerPackage.runnerURL else { return }
 
         busy = true
         defer { busy = false }
-        status = "STAGE 9.2 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
+        status = "STAGE 10.0 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
 
         let engine = IDeviceEngine(pairingPath: pairingURL.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
-            status = "STAGE 9.2 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
+            status = "STAGE 10.0 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
             return
         }
 
@@ -381,60 +338,50 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startStage92Auto() async {
+    private func startStage100Auto() async {
         guard let url = pairing.pairingURL else { return }
         busy = true
-        status = "STAGE 9.2 START • tunnel → RSD → embedded Runner preflight/auto-bootstrap → stable 8.2.2 loop"
-
-        var integratedConnected = false
-        do {
-            try await tunnel.ensureStarted()
-            integratedConnected = true
-            status = "STAGE 9.2 • integrated tunnel CONNECTED ✅ • probing RSD…"
-        } catch {
-            let diagnostic = tunnel.diagnostics(for: error)
-            if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
-                status = "STAGE 9.2 • integrated tunnel blocked by current signing • probing existing LocalDevVPN path… • \(diagnostic)"
-            } else {
-                status = "STAGE 9.2 • integrated tunnel unavailable • probing existing 10.7.0.1 path… • \(diagnostic)"
-            }
-        }
+        status = "STAGE 10.0 START • external LocalDevVPN → RSD → embedded Runner preflight/auto-bootstrap → stable 8.2.2 loop"
 
         let engine = IDeviceEngine(pairingPath: url.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
             busy = false
-            status = integratedConnected
-                ? "STAGE 9.2 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
-                : "STAGE 9.2 WAITING FOR LOCAL TUNNEL • open/connect LocalDevVPN, then START PILOT again • \(rsd.message)"
+            status = "STAGE 10.0 WAITING FOR LOCALDEVVPN • open/connect LocalDevVPN, then press START PILOT again • \(rsd.message)"
             return
         }
 
-        status = "STAGE 9.2 • RSD ✅ • checking installed XCTest Runner…"
+        status = "STAGE 10.0 • RSD ✅ • checking installed XCTest Runner…"
         var runner = await engine.discoverXCTestRunner()
         if !runner.ok {
+            if runnerPackage.source == .embedded && runnerPackage.isEmbeddedRunnerExpired {
+                busy = false
+                status = "STAGE 10.0 RUNNER EXPIRED • embedded free-account provisioning has expired • \(runnerPackage.provisioningStatus) • refresh package before auto-install"
+                return
+            }
+
             if let package = runnerPackage.runnerURL {
-                status = "STAGE 9.2 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
+                status = "STAGE 10.0 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
                 let install = await engine.installXCTestRunnerIPA(localPath: package.path)
                 guard install.ok else {
                     busy = false
-                    status = "STAGE 9.2 FAILED • phase=runner-self-install • \(install.message)"
+                    status = "STAGE 10.0 FAILED • phase=runner-self-install • \(install.message)"
                     return
                 }
                 runner = await engine.discoverXCTestRunner()
                 guard runner.ok else {
                     busy = false
-                    status = "STAGE 9.2 FAILED • phase=runner-post-install-verify • \(runner.message)"
+                    status = "STAGE 10.0 FAILED • phase=runner-post-install-verify • \(runner.message)"
                     return
                 }
-                status = "STAGE 9.2 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
+                status = "STAGE 10.0 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
             } else {
                 busy = false
-                status = "STAGE 9.2 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
+                status = "STAGE 10.0 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
                 return
             }
         } else {
-            status = "STAGE 9.2 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
+            status = "STAGE 10.0 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
         }
 
         busy = false
