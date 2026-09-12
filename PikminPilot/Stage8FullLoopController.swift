@@ -5,14 +5,21 @@ import UIKit
 final class Stage8FullLoopController: ObservableObject {
     static let persistedStatusKey = "PikminPilot.Stage8.LastStatus"
 
-    private enum StopCause {
+    private enum StopCause: Equatable {
         case none
-        case user
+        case userAfterCurrent
+        case userImmediate
         case backgroundExpired
+        case targetReached
+        case noAvailableFruit
     }
 
     @Published private(set) var isRunning = false
     @Published private(set) var completedDispatches = 0
+    @Published private(set) var targetDispatches: Int? = nil
+    @Published private(set) var currentPhase = "Idle"
+    @Published private(set) var stopAfterCurrentRequested = false
+    @Published private(set) var immediateStopRequested = false
 
     private var cancelled = false
     private var stopCause: StopCause = .none
@@ -29,6 +36,7 @@ final class Stage8FullLoopController: ObservableObject {
 
     func start(
         pairingPath: String,
+        targetDispatches: Int? = nil,
         onStatus: @escaping (String) -> Void,
         onScreenshot: @escaping (UIImage) -> Void
     ) {
@@ -37,13 +45,18 @@ final class Stage8FullLoopController: ObservableObject {
         cancelled = false
         stopCause = .none
         completedDispatches = 0
+        self.targetDispatches = targetDispatches.flatMap { $0 > 0 ? $0 : nil }
+        stopAfterCurrentRequested = false
+        immediateStopRequested = false
+        currentPhase = "Starting"
         logLines.removeAll(keepingCapacity: true)
         statusSink = onStatus
         screenshotSink = onScreenshot
         isRunning = true
 
         beginBackgroundWindow(label: "initial")
-        emit("STAGE 8.2.2 FULL LOOP START • fresh pink after checkpoint + Runner handoff • WDA=OFF")
+        let runLabel = self.targetDispatches.map { "target=\($0)" } ?? "target=∞"
+        emit("STAGE 10.1 PILOT START • \(runLabel) • stable 8.2.2 engine • WDA=OFF")
 
         worker = Task { [weak self] in
             guard let self else { return }
@@ -51,11 +64,33 @@ final class Stage8FullLoopController: ObservableObject {
         }
     }
 
-    func stop() {
+    func stopAfterCurrent() {
         guard isRunning else { return }
-        stopCause = .user
+        guard !stopAfterCurrentRequested else { return }
+        stopAfterCurrentRequested = true
+        stopCause = .userAfterCurrent
+        emit("STOP AFTER CURRENT requested • current fruit will finish, then Pilot will stop")
+    }
+
+    func stopNow() {
+        guard isRunning else { return }
+        guard !immediateStopRequested else { return }
+        immediateStopRequested = true
+        stopCause = .userImmediate
         cancelled = true
-        emit("STOP requested by user • will stop at the next safe checkpoint")
+        currentPhase = "Stopping now"
+        emit("STOP NOW requested • no new automation action will be started")
+        worker?.cancel()
+
+        // End our finite background lease immediately. This does not revoke an
+        // input event that has already been sent to XCTest, and a currently
+        // executing monolithic Runner tail may need to return before Swift can
+        // tear down the loop, but no subsequent tap/swipe/session is started.
+        backgroundGeneration &+= 1
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
     }
 
     private func finish() {
@@ -119,7 +154,9 @@ final class Stage8FullLoopController: ObservableObject {
                         self.emit("BACKGROUND expiration arrived during renewal • task ended; renewal continues")
                         return
                     }
-                    self.stopCause = .backgroundExpired
+                    if self.stopCause == .none {
+                        self.stopCause = .backgroundExpired
+                    }
                     self.cancelled = true
                     self.emit("BACKGROUND WINDOW EXPIRED • iOS background limit ended this run")
                 }
@@ -146,6 +183,7 @@ final class Stage8FullLoopController: ObservableObject {
         let engine = IDeviceEngine(pairingPath: pairingPath)
 
         do {
+            setPhase("Activating Pikmin")
             let activate = await engine.runXCTestActivateOnly()
             guard activate.ok else {
                 throw LoopError("phase=initial-activate • \(activate.message)")
@@ -154,14 +192,29 @@ final class Stage8FullLoopController: ObservableObject {
             await pause(0.45)
 
             while !cancelled {
+                if let targetDispatches, completedDispatches >= targetDispatches {
+                    stopCause = .targetReached
+                    currentPhase = "Completed"
+                    emit("COMPLETED • requested=\(targetDispatches) • completed=\(completedDispatches)")
+                    finish()
+                    return
+                }
+
                 let round = completedDispatches + 1
+                setPhase("Finding AVAILABLE fruit")
                 emit("ROUND \(round) • scanning Expedition list")
 
                 guard let choice = try await findAvailableFruit(
                     engine: engine,
                     round: round
                 ) else {
-                    emit("FINISHED • no safe AVAILABLE fruit found • completed=\(completedDispatches)")
+                    stopCause = .noAvailableFruit
+                    currentPhase = "No AVAILABLE fruit"
+                    if let targetDispatches {
+                        emit("FINISHED EARLY • requested=\(targetDispatches) • completed=\(completedDispatches) • no AVAILABLE fruit remaining")
+                    } else {
+                        emit("FINISHED • completed=\(completedDispatches) • no AVAILABLE fruit remaining")
+                    }
                     finish()
                     return
                 }
@@ -178,6 +231,22 @@ final class Stage8FullLoopController: ObservableObject {
 
                 if cancelled { break }
 
+                if stopAfterCurrentRequested {
+                    currentPhase = "Stopped after current"
+                    emit("STOPPED AFTER CURRENT • completed=\(completedDispatches)")
+                    finish()
+                    return
+                }
+
+                if let targetDispatches, completedDispatches >= targetDispatches {
+                    stopCause = .targetReached
+                    currentPhase = "Completed"
+                    emit("COMPLETED • requested=\(targetDispatches) • completed=\(completedDispatches)")
+                    finish()
+                    return
+                }
+
+                setPhase("Returning to fruit list")
                 guard try await waitForExpeditionList(engine: engine, attempts: 20) else {
                     throw LoopError("Round \(round): Expedition list did not return after green X")
                 }
@@ -284,6 +353,7 @@ final class Stage8FullLoopController: ObservableObject {
     ) async throws {
         try checkCancelled()
 
+        setPhase("Opening AVAILABLE fruit")
         emit("ROUND \(round) • tap AVAILABLE")
         try await tap(
             engine: engine,
@@ -293,6 +363,7 @@ final class Stage8FullLoopController: ObservableObject {
         )
         await pause(0.85)
 
+        setPhase("Finding 前往探險")
         emit("ROUND \(round) • detect 前往探險")
         guard let expedition = try await waitForPoint(
             engine: engine,
@@ -318,8 +389,10 @@ final class Stage8FullLoopController: ObservableObject {
         // the saved pink coordinate became stale and Runner tapped whatever was
         // now under that old point. Do the foreground checkpoint first, return
         // to Pikmin, and only then obtain a fresh DVT frame + fresh pink point.
+        setPhase("Preparing Pikmin selection")
         try await prepareCriticalTailWindow(engine: engine, round: round)
 
+        setPhase("Finding pink Pikmin filter")
         emit("ROUND \(round) • returned to selection page • detect pink on fresh post-checkpoint frame")
         await pause(0.28)
 
@@ -376,6 +449,7 @@ final class Stage8FullLoopController: ObservableObject {
         let pinkX = Double(pink.point.x) / Double(pinkCG.width)
         let pinkY = Double(pink.point.y) / Double(pinkCG.height)
 
+        setPhase("Pink → 12 → GO → green X")
         emit(String(format: "ROUND %d • ONE XCTest critical tail begin • fresh pink=(%.4f,%.4f) • pink→12→GO→greenX", round, pinkX, pinkY))
 
         let remaining = UIApplication.shared.backgroundTimeRemaining
@@ -396,11 +470,13 @@ final class Stage8FullLoopController: ObservableObject {
         }
 
         emit("ROUND \(round) • ONE XCTest critical tail completed ✅ • pink→12→GO→greenX")
+        try checkCancelled()
 
         // Stage 8.2.2 Runner activates Pikmin Pilot after tapping the green X.
         // Accept that foreground handoff, start a fresh task, then reactivate
         // Pikmin for the next DVT fruit-list scan. This removes the dead zone
         // where Round 1 finished but Pilot was already suspended before Round 2.
+        setPhase("Returning for next round")
         try await completeRunnerHandoff(engine: engine, round: round)
         await pause(0.25)
     }
@@ -724,13 +800,26 @@ final class Stage8FullLoopController: ObservableObject {
 
     private func stopLine() -> String {
         switch stopCause {
-        case .user:
-            return "STOPPED BY USER • completed=\(completedDispatches)"
+        case .userAfterCurrent:
+            return "STOPPED AFTER CURRENT • completed=\(completedDispatches)"
+        case .userImmediate:
+            return "STOPPED NOW • completed=\(completedDispatches) • phase=\(currentPhase)"
         case .backgroundExpired:
             return "STOPPED • reason=iOS-background-expired • completed=\(completedDispatches)"
+        case .targetReached:
+            if let targetDispatches {
+                return "COMPLETED • requested=\(targetDispatches) • completed=\(completedDispatches)"
+            }
+            return "COMPLETED • completed=\(completedDispatches)"
+        case .noAvailableFruit:
+            return "FINISHED • no AVAILABLE fruit remaining • completed=\(completedDispatches)"
         case .none:
             return "STOPPED • reason=cancelled • completed=\(completedDispatches)"
         }
+    }
+
+    private func setPhase(_ phase: String) {
+        currentPhase = phase
     }
 
     private func checkCancelled() throws {

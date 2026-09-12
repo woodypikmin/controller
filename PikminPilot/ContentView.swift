@@ -7,6 +7,10 @@ struct ContentView: View {
     @StateObject private var loop = Stage8FullLoopController()
     @StateObject private var runnerPackage = RunnerPackageStore()
 
+    // 0 = unlimited, -1 = custom, otherwise fixed dispatch count.
+    @AppStorage("PikminPilot.RunPreset") private var runPreset = 10
+    @AppStorage("PikminPilot.CustomRunTarget") private var customRunTarget = 30
+
     @State private var showPairingImporter = false
     @State private var showRunnerImporter = false
     @State private var status = UserDefaults.standard.string(forKey: Stage8FullLoopController.persistedStatusKey) ?? "尚未測試"
@@ -18,235 +22,255 @@ struct ContentView: View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
-
-                        Text("Stage 10.0 — FREE APPLE ID STABLE PACKAGE")
+                        Text("Stage 10.1 — PILOT CONTROL UI")
                             .font(.headline)
-
-                        Text("Free Apple ID 模式：保留已跑順的 Stage 8.2.2 loop + embedded Runner auto-bootstrap。因 Personal Team 不支援 Network Extension provider，本版不再嘗試內建 VPN；開發/日常使用只要先開既有 LocalDevVPN，再按 START PILOT。主 App 不再帶無法使用的 PacketTunnelProvider entitlement。")
+                        Text("穩定 Stage 8.2.2 automation engine 不變。本版加入執行次數、兩種停止、進度/階段顯示與 Diagnostics 收納。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 6)
-                }
-
-                Section("0. Runtime Mode") {
-                    LabeledContent("模式", value: "Free Apple ID / Personal Team")
-                    LabeledContent("RSD", value: "10.7.0.1:49152")
-                    Text("先開已經可用的 LocalDevVPN。Pikmin Pilot 會直接 probe RSD；不再嘗試目前必定 permission denied 的內建 PacketTunnelProvider。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("1. Pairing Record") {
-                    LabeledContent("狀態", value: pairing.status)
-
-                    Button("匯入 RPPairing Record") { showPairingImporter = true }
-
-                    Button("VALIDATE WITH IDEVICE") {
-                        Task { await validatePairing() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    if pairing.pairingURL != nil {
-                        Button("移除 Pairing Record", role: .destructive) {
-                            try? pairing.remove()
-                            screenshotImage = nil
-                            status = "Pairing Record 已移除"
-                        }
-                    }
-                }
-
-                Section("2. Embedded Runner") {
-                    LabeledContent("Runner package", value: runnerPackage.status)
-
-                    LabeledContent("Runner source", value: runnerPackage.sourceLabel)
-                    LabeledContent("Runner signing", value: runnerPackage.provisioningStatus)
-
-                    Button("PHONE-LOCAL → INSTALL / UPDATE EMBEDDED RUNNER") {
-                        Task { await installAvailableRunner() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil || runnerPackage.runnerURL == nil)
-
-                    DisclosureGroup("ADVANCED: Signed Runner override") {
-                        Button("IMPORT SIGNED RUNNER OVERRIDE") {
-                            showRunnerImporter = true
-                        }
-                        .disabled(busy || loop.isRunning)
-
-                        if runnerPackage.source == .importedOverride {
-                            Button("移除 Runner override", role: .destructive) {
-                                try? runnerPackage.removeImportedOverride()
-                                status = "Runner override 已移除；已回到內建 Runner"
-                            }
-                            .disabled(loop.isRunning)
-                        }
-                    }
-
-                    Text("正常使用不需要手動安裝第二個 Runner IPA。START PILOT 發現 Runner 缺少時，會直接從 App bundle 自動安裝。Free Apple ID provisioning 會到期，所以這裡會顯示目前內建 Runner 的簽章到期時間；下一階段會把 Windows refresh 簡化成單一工具。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("3. Pikmin Pilot") {
-                    LabeledContent("目標", value: "10.7.0.1:49152")
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("狀態")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Spacer()
-
-                            Button {
-                                copyStatusToClipboard()
-                            } label: {
-                                Label(
-                                    statusCopied ? "COPIED" : "COPY STATUS",
-                                    systemImage: statusCopied ? "checkmark" : "doc.on.doc"
-                                )
-                                .font(.caption.bold())
-                            }
-                            .buttonStyle(.borderless)
-                        }
-
-                        Text(status)
-                            .font(.footnote.monospaced())
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if isBootstrapFailure {
-                            Label {
-                                Text("Runner 的巢狀 .xctest 已能載入。7.8.5 專門驗證 input：不再 app.launch() 重啟 Pikmin；Runner 只接受已經在背景執行的 Pikmin，使用 activate() 帶回前景，等待 4 秒後只點一次畫面正中央。")
-                                    .font(.footnote)
-                            } icon: {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                            }
-                            .foregroundStyle(.orange)
-                        }
-                    }
                     .padding(.vertical, 4)
+                }
 
-                    Button("START PILOT") {
-                        Task { await startStage100Auto() }
+                Section("Pilot Control") {
+                    Picker("搬運次數", selection: $runPreset) {
+                        Text("1 次").tag(1)
+                        Text("5 次").tag(5)
+                        Text("10 次").tag(10)
+                        Text("20 次").tag(20)
+                        Text("自訂").tag(-1)
+                        Text("無限").tag(0)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+                    .disabled(loop.isRunning || busy)
 
-                    Button("CONNECT PHONE-LOCAL RSD") {
-                        Task { await connectRSD() }
+                    if runPreset == -1 {
+                        Stepper(
+                            "自訂：\(customRunTarget) 次",
+                            value: $customRunTarget,
+                            in: 1...200
+                        )
+                        .disabled(loop.isRunning || busy)
                     }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("PHONE-LOCAL → TAKE SCREENSHOT") {
-                        Task { await takeScreenshot() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("PROBE PHONE-LOCAL XCTEST SERVICES") {
-                        Task { await probeXCTestServices() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("BOOTSTRAP PHONE-LOCAL XCTEST DTX") {
-                        Task { await bootstrapXCTestDTX() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("FIND INSTALLED XCTEST RUNNER") {
-                        Task { await discoverXCTestRunner() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("PHONE-LOCAL → LAUNCH XCTEST RUNNER") {
-                        Task { await launchDiscoveredXCTestRunner() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("PREPARE XCTEST SESSION METADATA") {
-                        Task { await prepareXCTestMetadata() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-
-                    Button("RUN XCTEST → ACTIVATE + CENTER TAP") {
-                        Task { await runXCTestCenterTap() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("STAGE 8.0 → DVT AVAILABLE FRUIT TAP") {
-                        Task { await runStage8AvailableFruitTap() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    Button("DEBUG → START LOOP (TUNNEL ALREADY READY)") {
-                        startStage81Loop()
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
 
                     if loop.isRunning {
-                        Button("STOP LOOP AT SAFE CHECKPOINT", role: .destructive) {
-                            loop.stop()
+                        LabeledContent("目前階段", value: loop.currentPhase)
+                        LabeledContent("已完成", value: progressText)
+
+                        if let target = loop.targetDispatches, target > 0 {
+                            ProgressView(
+                                value: Double(loop.completedDispatches),
+                                total: Double(target)
+                            )
+                        } else {
+                            HStack {
+                                ProgressView()
+                                Text("無限模式 • completed=\(loop.completedDispatches)")
+                                    .font(.footnote)
+                            }
                         }
 
-                        LabeledContent(
-                            "已完成搬運",
-                            value: "\(loop.completedDispatches)"
-                        )
+                        Button {
+                            loop.stopAfterCurrent()
+                        } label: {
+                            Label(
+                                loop.stopAfterCurrentRequested ? "已要求：這輪完成後停止" : "STOP AFTER CURRENT",
+                                systemImage: "stop.circle"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(loop.stopAfterCurrentRequested || loop.immediateStopRequested)
+
+                        Button(role: .destructive) {
+                            loop.stopNow()
+                        } label: {
+                            Label(
+                                loop.immediateStopRequested ? "STOPPING…" : "STOP NOW",
+                                systemImage: "xmark.octagon.fill"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(loop.immediateStopRequested)
+
+                        Text("STOP NOW 會立刻阻止後續新動作。若某個 XCTest 指令已經送出，或 Runner 正在執行單一 pink→12→GO→X critical tail，已在執行中的那個指令可能要返回後才完全停止。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            Task { await startStage101Auto() }
+                        } label: {
+                            Label("START PILOT", systemImage: "play.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(busy || pairing.pairingURL == nil)
+
+                        Text("先開 LocalDevVPN。START 會自動 probe RSD、確認/自動安裝 embedded Runner，然後進入完整水果 loop。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
-                    Button("PHONE-LOCAL → LAUNCH PIKMIN") {
-                        Task { await launchPikmin() }
-                    }
-                    .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
-
-                    if busy || loop.isRunning {
+                    if busy && !loop.isRunning {
                         HStack {
                             ProgressView()
-                            Text(loop.isRunning ? "Pikmin Pilot 自動搬運中…" : "Pikmin Pilot 正在準備 phone-local engine…")
+                            Text("準備 phone-local engine…")
+                                .font(.footnote)
                         }
                     }
+                }
+
+                Section("Setup") {
+                    LabeledContent("LocalDevVPN", value: "外部 App（先 Connect）")
+                    LabeledContent("RSD", value: "10.7.0.1:49152")
+                    LabeledContent("Pairing", value: pairing.status)
+                    LabeledContent("Runner", value: runnerPackage.sourceLabel)
+                    LabeledContent("Runner signing", value: runnerPackage.provisioningStatus)
+
+                    Button("匯入 RPPairing Record") {
+                        showPairingImporter = true
+                    }
+                    .disabled(loop.isRunning)
+
+                    if pairing.pairingURL != nil {
+                        Button("VALIDATE PAIRING") {
+                            Task { await validatePairing() }
+                        }
+                        .disabled(busy || loop.isRunning)
+                    }
+                }
+
+                Section("Status") {
+                    HStack {
+                        Text(loop.isRunning ? "LIVE LOG" : "LAST LOG")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            copyStatusToClipboard()
+                        } label: {
+                            Label(
+                                statusCopied ? "COPIED" : "COPY LOG",
+                                systemImage: statusCopied ? "checkmark" : "doc.on.doc"
+                            )
+                            .font(.caption.bold())
+                        }
+                        .buttonStyle(.borderless)
+                    }
+
+                    Text(status)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 if let screenshotImage {
-                    Section("Phone-local Screenshot") {
+                    Section("Latest Screenshot") {
                         Image(uiImage: screenshotImage)
                             .resizable()
                             .scaledToFit()
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        Text("看到這張圖 = DVT Screenshot → RSD → phone-local tunnel 已經成功。因為按鈕是在 Pikmin Pilot 內按的，這個 probe 正常會先截到目前 iPhone 畫面。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Stage 10.0 Test") {
-                    Text("1. 先開 LocalDevVPN。\n2. 打開 Pikmin Pilot，按 START PILOT。\n3. App 會自動 probe RSD、確認/自動安裝 embedded Runner，再進入穩定 Stage 8.2.2 loop。\n4. 不需要再按 integrated tunnel，也不需要手動安裝第二個 Runner IPA。")
+                Section {
+                    DisclosureGroup("Diagnostics / Advanced") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button("CONNECT PHONE-LOCAL RSD") {
+                                Task { await connectRSD() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("PHONE-LOCAL → TAKE SCREENSHOT") {
+                                Task { await takeScreenshot() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("PROBE PHONE-LOCAL XCTEST SERVICES") {
+                                Task { await probeXCTestServices() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("BOOTSTRAP PHONE-LOCAL XCTEST DTX") {
+                                Task { await bootstrapXCTestDTX() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("FIND INSTALLED XCTEST RUNNER") {
+                                Task { await discoverXCTestRunner() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("INSTALL / UPDATE EMBEDDED RUNNER") {
+                                Task { await installAvailableRunner() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil || runnerPackage.runnerURL == nil)
+
+                            Button("PHONE-LOCAL → LAUNCH XCTEST RUNNER") {
+                                Task { await launchDiscoveredXCTestRunner() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("PREPARE XCTEST SESSION METADATA") {
+                                Task { await prepareXCTestMetadata() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("RUN XCTEST → ACTIVATE + CENTER TAP") {
+                                Task { await runXCTestCenterTap() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("STAGE 8.0 → AVAILABLE FRUIT TAP") {
+                                Task { await runStage8AvailableFruitTap() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("DEBUG → START LOOP DIRECTLY") {
+                                startStage81Loop()
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Button("PHONE-LOCAL → LAUNCH PIKMIN") {
+                                Task { await launchPikmin() }
+                            }
+                            .disabled(busy || loop.isRunning || pairing.pairingURL == nil)
+
+                            Divider()
+
+                            Button("IMPORT SIGNED RUNNER OVERRIDE") {
+                                showRunnerImporter = true
+                            }
+                            .disabled(busy || loop.isRunning)
+
+                            if runnerPackage.source == .importedOverride {
+                                Button("移除 Runner override", role: .destructive) {
+                                    try? runnerPackage.removeImportedOverride()
+                                    status = "Runner override 已移除；已回到內建 Runner"
+                                }
+                                .disabled(loop.isRunning)
+                            }
+
+                            if pairing.pairingURL != nil {
+                                Button("移除 Pairing Record", role: .destructive) {
+                                    try? pairing.remove()
+                                    screenshotImage = nil
+                                    status = "Pairing Record 已移除"
+                                }
+                                .disabled(loop.isRunning)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
                 }
 
-                Section("Credits") {
-                    Text("Integrated loopback tunnel behavior is based on LocalDevVPN / StosVPN by the SideStore Team and contributors (jkcoxson, Stossy11). License text is included in THIRD_PARTY_LOCALDEVVPN_LICENSE.txt. Pikmin Pilot remains a separate project and does not reuse LocalDevVPN branding.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Bot Core") {
-                    Label("Stage 5 card-first 水果辨識：保留", systemImage: "checkmark.circle.fill")
-                    Label("粉紅 / 12 隻 / GO / X / LOOP：保留", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.2.1：phone-local DVT screenshot ✅", systemImage: "camera.fill")
-                    Label("Stage 7.4：testmanagerd + dtservicehub service probe ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.5：DTX handshake bootstrap ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.6：real XCUITest Runner package + discovery ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 8.2.2：完整 loop 實機穩定 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 10.0：Personal Team 模式移除不可用 Network Extension entitlement", systemImage: "network")
-                    Label("Stage 9.1：AFC + InstallationProxy phone-local Runner self-install ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 10.0：signed Runner embedded in host + auto-bootstrap ✅", systemImage: "shippingbox.and.arrow.backward.fill")
+                Section("Stable Engine") {
+                    Label("Card-first AVAILABLE / BUSY / COMPLETE", systemImage: "checkmark.circle.fill")
+                    Label("Pink → fixed 12 → GO → green X → loop", systemImage: "checkmark.circle.fill")
+                    Label("Embedded Runner phone-local auto-bootstrap", systemImage: "checkmark.circle.fill")
+                    Label("Run count + safe stop + STOP NOW", systemImage: "slider.horizontal.3")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -290,6 +314,24 @@ struct ContentView: View {
         }
     }
 
+    private var selectedRunTarget: Int? {
+        switch runPreset {
+        case 0:
+            return nil
+        case -1:
+            return max(1, customRunTarget)
+        default:
+            return max(1, runPreset)
+        }
+    }
+
+    private var progressText: String {
+        if let target = loop.targetDispatches {
+            return "\(loop.completedDispatches) / \(target)"
+        }
+        return "\(loop.completedDispatches) / ∞"
+    }
+
 
     private var isBootstrapFailure: Bool {
         let lower = status.lowercased()
@@ -316,12 +358,12 @@ struct ContentView: View {
 
         busy = true
         defer { busy = false }
-        status = "STAGE 10.0 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
+        status = "STAGE 10.1 RUNNER BOOTSTRAP • source=\(runnerPackage.sourceLabel) • AFC upload → InstallationProxy install…"
 
         let engine = IDeviceEngine(pairingPath: pairingURL.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
-            status = "STAGE 10.0 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
+            status = "STAGE 10.1 RUNNER INSTALL FAILED • RSD offline • \(rsd.message)"
             return
         }
 
@@ -338,55 +380,56 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startStage100Auto() async {
+    private func startStage101Auto() async {
         guard let url = pairing.pairingURL else { return }
         busy = true
-        status = "STAGE 10.0 START • external LocalDevVPN → RSD → embedded Runner preflight/auto-bootstrap → stable 8.2.2 loop"
+        status = "STAGE 10.1 START • LocalDevVPN → RSD → embedded Runner preflight → controlled stable loop"
 
         let engine = IDeviceEngine(pairingPath: url.path)
         let rsd = await engine.probeRSD()
         guard rsd.ok else {
             busy = false
-            status = "STAGE 10.0 WAITING FOR LOCALDEVVPN • open/connect LocalDevVPN, then press START PILOT again • \(rsd.message)"
+            status = "STAGE 10.1 WAITING FOR LOCALDEVVPN • open/connect LocalDevVPN, then press START PILOT again • \(rsd.message)"
             return
         }
 
-        status = "STAGE 10.0 • RSD ✅ • checking installed XCTest Runner…"
+        status = "STAGE 10.1 • RSD ✅ • checking installed XCTest Runner…"
         var runner = await engine.discoverXCTestRunner()
         if !runner.ok {
             if runnerPackage.source == .embedded && runnerPackage.isEmbeddedRunnerExpired {
                 busy = false
-                status = "STAGE 10.0 RUNNER EXPIRED • embedded free-account provisioning has expired • \(runnerPackage.provisioningStatus) • refresh package before auto-install"
+                status = "STAGE 10.1 RUNNER EXPIRED • embedded free-account provisioning has expired • \(runnerPackage.provisioningStatus) • refresh package before auto-install"
                 return
             }
 
             if let package = runnerPackage.runnerURL {
-                status = "STAGE 10.0 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
+                status = "STAGE 10.1 • Runner missing → auto-installing \(runnerPackage.sourceLabel) signed IPA via AFC + InstallationProxy…"
                 let install = await engine.installXCTestRunnerIPA(localPath: package.path)
                 guard install.ok else {
                     busy = false
-                    status = "STAGE 10.0 FAILED • phase=runner-self-install • \(install.message)"
+                    status = "STAGE 10.1 FAILED • phase=runner-self-install • \(install.message)"
                     return
                 }
                 runner = await engine.discoverXCTestRunner()
                 guard runner.ok else {
                     busy = false
-                    status = "STAGE 10.0 FAILED • phase=runner-post-install-verify • \(runner.message)"
+                    status = "STAGE 10.1 FAILED • phase=runner-post-install-verify • \(runner.message)"
                     return
                 }
-                status = "STAGE 10.0 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
+                status = "STAGE 10.1 • Runner auto-bootstrap ✅ • source=\(runnerPackage.sourceLabel) • RSD ✅ • starting stable Stage 8.2.2 loop…"
             } else {
                 busy = false
-                status = "STAGE 10.0 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
+                status = "STAGE 10.1 PACKAGING ERROR • no installed Runner and embedded signed Runner is missing from App bundle • \(runner.message)"
                 return
             }
         } else {
-            status = "STAGE 10.0 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
+            status = "STAGE 10.1 • Runner ✅ • RSD ✅ • starting stable Stage 8.2.2 loop…"
         }
 
         busy = false
         loop.start(
             pairingPath: url.path,
+            targetDispatches: selectedRunTarget,
             onStatus: { newStatus in
                 status = newStatus
             },
@@ -583,6 +626,7 @@ struct ContentView: View {
 
         loop.start(
             pairingPath: url.path,
+            targetDispatches: selectedRunTarget,
             onStatus: { newStatus in
                 status = newStatus
             },
