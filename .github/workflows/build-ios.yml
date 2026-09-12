@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 10.0 Free Apple ID Stable Package
+name: Build Pikmin Pilot Stage 10.1 Pilot Control UI
 
 on:
   workflow_dispatch:
@@ -91,7 +91,7 @@ jobs:
           missing = required - targets
           if missing:
               raise SystemExit("Missing target(s): " + ", ".join(sorted(missing)))
-          print("Stage 10.0 targets verified")
+          print("Stage 10.1 targets verified")
           PY
 
       - name: Build unsigned iPhone host app
@@ -113,6 +113,7 @@ jobs:
           set -euxo pipefail
           APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           test -d "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tee AppBundleIdentifier.txt
           cp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
           cp PikminPilotEmbeddedRunnerMetadata.plist "$APP/PikminPilotEmbeddedRunnerMetadata.plist"
           test -s "$APP/PikminPilotEmbeddedRunner.ipa"
@@ -128,14 +129,14 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
-          /usr/bin/zip -qry PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa Payload
-          unzip -l PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
+          /usr/bin/zip -qry PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa Payload
+          unzip -l PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned
+          name: PikminPilot-Stage10.1-Pilot-Control-UI-unsigned
           path: |
-            PikminPilot-Stage10.0-Free-Apple-ID-Stable-Package-unsigned.ipa
+            PikminPilot-Stage10.1-Pilot-Control-UI-unsigned.ipa
             AppBundleIdentifier.txt
             EmbeddedRunnerBundleIdentifier.txt
             EmbeddedXCTestBundleIdentifier.txt
