@@ -21,17 +21,17 @@ struct ContentView: View {
                         Text("Pikmin Pilot")
                             .font(.largeTitle.bold())
 
-                        Text("Stage 9.0 — INTEGRATED LOCAL TUNNEL")
+                        Text("Stage 9.0.1 — SIGNING-AWARE TUNNEL + FALLBACK")
                             .font(.headline)
 
-                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop，不改 detector / XCTest lifecycle。Stage 9.0 把 LocalDevVPN 的 phone-local loopback PacketTunnelProvider 直接嵌入 Pikmin Pilot，目標是移除獨立 LocalDevVPN App。全程仍不使用 WDA localhost:8100。")
+                        Text("保留已實機跑順的 Stage 8.2.2 完整 loop。內嵌 PacketTunnelProvider 只在簽章 provisioning 真正含 Network Extension entitlement 時啟用；目前 Sideloadly build 若無此 entitlement，會自動 fallback 到已啟動的 App Store LocalDevVPN。WDA 仍為 OFF。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 6)
                 }
 
-                Section("0. Integrated Local Tunnel") {
+                Section("0. Local Tunnel / Signing Diagnostics") {
                     LabeledContent("Tunnel", value: tunnel.state.rawValue)
                     LabeledContent("Provider", value: tunnel.providerBundleID)
                     LabeledContent("Interface", value: tunnel.interfaceCIDR)
@@ -42,7 +42,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
 
-                    Button("ENABLE / START INTEGRATED TUNNEL") {
+                    Button("TRY INTEGRATED TUNNEL") {
                         Task { await startIntegratedTunnel() }
                     }
                     .disabled(busy || loop.isRunning)
@@ -54,7 +54,7 @@ struct ContentView: View {
                         .disabled(loop.isRunning)
                     }
 
-                    Text("第一次啟用時 iOS 會顯示『新增 VPN 設定』系統授權。Stage 9.0 會在 runtime 動態讀取 Sideloadly 簽完後真正的 .appex bundle ID，不 hard-code com.example。測試這版時先把獨立 LocalDevVPN 關掉，避免兩個 tunnel 同時競爭。")
+                    Text("重要：把 entitlement 寫進原始碼並不代表 Sideloadly 的 provisioning profile 會授權它。若顯示 NEConfigurationErrorDomain Code=10 / permission denied，代表目前簽章沒有 Network Extension 權限；這不是 RSD/loop engine 壞掉。開發期可繼續使用 App Store LocalDevVPN，START PILOT 會自動 fallback。未來 TestFlight/正式簽章會再啟用內建 Tunnel。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -118,7 +118,7 @@ struct ContentView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Button("STAGE 9.0 → START PILOT (TUNNEL + RSD + LOOP)") {
+                    Button("STAGE 9.0.1 → START PILOT (AUTO TUNNEL + RSD + LOOP)") {
                         Task { await startStage90Auto() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -213,7 +213,7 @@ struct ContentView: View {
                 }
 
                 Section("Stage 9.0 Test") {
-                    Text("1. 先把獨立 LocalDevVPN 關掉。\n2. 第一次按 ENABLE / START INTEGRATED TUNNEL，允許 iOS 新增 VPN 設定。\n3. Tunnel 顯示 CONNECTED 後，10.7.0.1:49152 應由 Pikmin Pilot 自己的 PacketTunnelProvider 提供 loopback path。\n4. Pairing Record 沿用目前已成功的檔案。\n5. 開 Pikmin Bloom 到探險水果列表後回 Pikmin Pilot。\n6. 之後只按 STAGE 9.0 → START PILOT (TUNNEL + RSD + LOOP)：它會確認 tunnel → probe RSD → 啟動原封不動的 Stage 8.2.2 loop。\n7. 如果 Tunnel 本身失敗，COPY STATUS / tunnel detail 給我；先不要動已成功的 8.2.2 automation engine。")
+                    Text("1. 目前 Sideloadly 若沒有 Network Extension entitlement，請像以前一樣先開 App Store LocalDevVPN。\n2. Pairing Record 沿用目前已成功的檔案。\n3. 開 Pikmin Bloom 到探險水果列表後回 Pikmin Pilot。\n4. 按 STAGE 9.0.1 → START PILOT：它先嘗試內建 Tunnel；若簽章權限不足，會直接 probe 10.7.0.1:49152，外部 LocalDevVPN 已連線就繼續 Stage 8.2.2 loop。\n5. 未來 TestFlight/正式簽章取得 Network Extension capability 後，同一份程式會改走內建 Tunnel。")
                 }
 
                 Section("Credits") {
@@ -232,7 +232,7 @@ struct ContentView: View {
                     Label("Stage 7.7：phone-local .xctrunner process launch ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.0：AVAILABLE dynamic tap 實機成功 ✅", systemImage: "checkmark.circle.fill")
                     Label("Stage 8.2.2：完整 loop 實機穩定 ✅", systemImage: "checkmark.circle.fill")
-                    Label("Stage 9.0：內嵌 PacketTunnelProvider → 10.7.0.1 phone-local path", systemImage: "network")
+                    Label("Stage 9.0.1：Network Extension entitlement-aware + external LocalDevVPN fallback", systemImage: "network")
                 }
             }
             .navigationTitle("Pikmin Pilot")
@@ -283,15 +283,20 @@ struct ContentView: View {
     @MainActor
     private func startIntegratedTunnel() async {
         busy = true
-        status = "STAGE 9.0 TUNNEL • preparing embedded PacketTunnelProvider…"
+        status = "STAGE 9.0.1 TUNNEL • attempting embedded PacketTunnelProvider…"
         defer { busy = false }
 
         do {
             try await tunnel.ensureStarted()
-            status = "STAGE 9.0 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR) • next=probe 10.7.0.1:49152"
+            status = "STAGE 9.0.1 TUNNEL CONNECTED ✅ • provider=\(tunnel.providerBundleID) • iface=\(tunnel.interfaceCIDR) • peer=\(tunnel.peerCIDR)"
         } catch {
             await tunnel.refresh()
-            status = "STAGE 9.0 TUNNEL FAILED • \(error.localizedDescription) • tunnel=\(tunnel.detail)"
+            let diagnostic = tunnel.diagnostics(for: error)
+            if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
+                status = "STAGE 9.0.1 INTEGRATED TUNNEL UNAVAILABLE • signing/provisioning lacks Network Extension entitlement • \(diagnostic) • development fallback=use App Store LocalDevVPN"
+            } else {
+                status = "STAGE 9.0.1 TUNNEL FAILED • \(diagnostic) • tunnel=\(tunnel.detail)"
+            }
         }
     }
 
@@ -299,36 +304,48 @@ struct ContentView: View {
     private func startStage90Auto() async {
         guard let url = pairing.pairingURL else { return }
         busy = true
-        status = "STAGE 9.0 START • integrated tunnel → RSD probe → stable 8.2.2 loop"
+        status = "STAGE 9.0.1 START • try integrated tunnel → RSD probe → stable 8.2.2 loop"
 
+        var integratedConnected = false
         do {
             try await tunnel.ensureStarted()
-            status = "STAGE 9.0 • tunnel CONNECTED ✅ • probing phone-local RSD 10.7.0.1:49152…"
-
-            let engine = IDeviceEngine(pairingPath: url.path)
-            let rsd = await engine.probeRSD()
-            guard rsd.ok else {
-                busy = false
-                status = "STAGE 9.0 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
-                return
-            }
-
-            status = "STAGE 9.0 • tunnel ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
-            busy = false
-            loop.start(
-                pairingPath: url.path,
-                onStatus: { newStatus in
-                    status = newStatus
-                },
-                onScreenshot: { image in
-                    screenshotImage = image
-                }
-            )
+            integratedConnected = true
+            status = "STAGE 9.0.1 • integrated tunnel CONNECTED ✅ • probing phone-local RSD 10.7.0.1:49152…"
         } catch {
-            busy = false
-            await tunnel.refresh()
-            status = "STAGE 9.0 FAILED • phase=integrated-tunnel • \(error.localizedDescription) • \(tunnel.detail)"
+            let diagnostic = tunnel.diagnostics(for: error)
+            if tunnel.isLikelyMissingNetworkExtensionEntitlement(error) {
+                status = "STAGE 9.0.1 • integrated tunnel not authorized by current signing profile • \(diagnostic) • probing external LocalDevVPN path…"
+            } else {
+                status = "STAGE 9.0.1 • integrated tunnel unavailable • \(diagnostic) • probing existing 10.7.0.1 path…"
+            }
         }
+
+        let engine = IDeviceEngine(pairingPath: url.path)
+        let rsd = await engine.probeRSD()
+        guard rsd.ok else {
+            busy = false
+            if integratedConnected {
+                status = "STAGE 9.0.1 FAILED • phase=RSD-after-integrated-tunnel • \(rsd.message)"
+            } else {
+                status = "STAGE 9.0.1 WAITING FOR LOCAL TUNNEL • integrated tunnel unavailable under current signing AND external 10.7.0.1:49152 is offline • open/connect App Store LocalDevVPN, then press START PILOT again • \(rsd.message)"
+            }
+            return
+        }
+
+        status = integratedConnected
+            ? "STAGE 9.0.1 • integrated tunnel ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
+            : "STAGE 9.0.1 • external LocalDevVPN path ✅ • RSD ✅ • starting stable Stage 8.2.2 full loop…"
+
+        busy = false
+        loop.start(
+            pairingPath: url.path,
+            onStatus: { newStatus in
+                status = newStatus
+            },
+            onScreenshot: { image in
+                screenshotImage = image
+            }
+        )
     }
 
     @MainActor

@@ -35,6 +35,7 @@ final class PikminTunnelManager: ObservableObject {
     @Published private(set) var state: TunnelState = .unknown
     @Published private(set) var detail = "尚未檢查"
     @Published private(set) var providerBundleID = "—"
+    @Published private(set) var lastErrorDiagnostics = ""
 
     let interfaceCIDR = "10.7.1.1/24"
     let peerCIDR = "10.7.0.1/32"
@@ -86,7 +87,8 @@ final class PikminTunnelManager: ObservableObject {
             syncPublishedState()
         } catch {
             state = .error
-            detail = "讀取 VPN 設定失敗：\(error.localizedDescription)"
+            lastErrorDiagnostics = diagnostics(for: error)
+            detail = "讀取 VPN 設定失敗：\(lastErrorDiagnostics)"
         }
     }
 
@@ -160,6 +162,33 @@ final class PikminTunnelManager: ObservableObject {
 
         syncPublishedState()
         throw TunnelError.connectTimeout(detail)
+    }
+
+
+    func diagnostics(for error: Error) -> String {
+        let ns = error as NSError
+        var pieces = [
+            "domain=\(ns.domain)",
+            "code=\(ns.code)",
+            "description=\(ns.localizedDescription)",
+        ]
+        if !ns.userInfo.isEmpty {
+            let compact = ns.userInfo
+                .map { "\($0.key)=\($0.value)" }
+                .sorted()
+                .joined(separator: "; ")
+            pieces.append("userInfo={\(compact)}")
+        }
+        return pieces.joined(separator: " • ")
+    }
+
+    func isLikelyMissingNetworkExtensionEntitlement(_ error: Error) -> Bool {
+        let ns = error as NSError
+        let text = "\(ns.domain) \(ns.code) \(ns.localizedDescription)".lowercased()
+        return (ns.domain == "NEConfigurationErrorDomain" && ns.code == 10)
+            || (ns.domain == "NEVPNErrorDomain" && ns.code == 5)
+            || text.contains("permission denied")
+            || text.contains("not authorized")
     }
 
     func stop() {
