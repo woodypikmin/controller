@@ -1,4 +1,4 @@
-name: Build Pikmin Pilot Stage 9.1 Phone-Local Runner Self-Install
+name: Build Pikmin Pilot Stage 9.2 Embedded Runner Auto-Bootstrap
 
 on:
   workflow_dispatch:
@@ -11,6 +11,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify embedded signed Runner payload
+        run: |
+          set -euxo pipefail
+          RUNNER_IPA="EmbeddedRunner/PikminPilotRunner-signed.ipa"
+          test -f "$RUNNER_IPA"
+          test -s "$RUNNER_IPA"
+          unzip -t "$RUNNER_IPA" >/dev/null
+
+          rm -rf EmbeddedRunnerCheck
+          mkdir EmbeddedRunnerCheck
+          unzip -q "$RUNNER_IPA" -d EmbeddedRunnerCheck
+          RUNNER_APP="$(find EmbeddedRunnerCheck/Payload -maxdepth 1 -type d -name '*-Runner.app' -print -quit)"
+          test -n "$RUNNER_APP"
+          test -d "$RUNNER_APP"
+          test -f "$RUNNER_APP/embedded.mobileprovision"
+          test -d "$RUNNER_APP/_CodeSignature"
+
+          TEST_BUNDLE="$(find "$RUNNER_APP/PlugIns" -maxdepth 1 -type d -name '*.xctest' -print -quit)"
+          test -n "$TEST_BUNDLE"
+          test -d "$TEST_BUNDLE/_CodeSignature"
+
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_APP/Info.plist" | tee EmbeddedRunnerBundleIdentifier.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$TEST_BUNDLE/Info.plist" | tee EmbeddedXCTestBundleIdentifier.txt
+          shasum -a 256 "$RUNNER_IPA" | tee EmbeddedRunnerSHA256.txt
+          ls -lh "$RUNNER_IPA"
+          rm -rf EmbeddedRunnerCheck
 
       - name: Build IDevice XCFramework on runner
         run: |
@@ -31,40 +58,25 @@ jobs:
 
       - name: Generate project
         run: xcodegen generate
-      - name: Verify generated app scheme includes UI tests
+
+      - name: Verify generated targets
         run: |
           set -euxo pipefail
-          xcodebuild -project PikminPilot.xcodeproj -list
           xcodebuild -project PikminPilot.xcodeproj -list -json > xcode-list.json
-
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           data = json.loads(Path("xcode-list.json").read_text())
           project = data.get("project", {})
           targets = set(project.get("targets", []))
-          schemes = set(project.get("schemes", []))
-
-          required_targets = {
-              "PikminPilot",
-              "PikminPilotTunnel",
-              "PikminPilotRunnerUITests",
-          }
-
-          missing = required_targets - targets
+          required = {"PikminPilot", "PikminPilotTunnel", "PikminPilotRunnerUITests"}
+          missing = required - targets
           if missing:
-              raise SystemExit(
-                  "Missing target(s): " + ", ".join(sorted(missing))
-              )
-
-          if "PikminPilot" not in schemes:
-              raise SystemExit("Existing PikminPilot scheme is missing")
-
-          print("PikminPilot app + embedded tunnel + UI test targets verified.")
+              raise SystemExit("Missing target(s): " + ", ".join(sorted(missing)))
+          print("Stage 9.2 targets verified")
           PY
 
-      - name: Build unsigned iPhone app
+      - name: Build unsigned iPhone host app
         run: |
           set -euxo pipefail
           xcodebuild \
@@ -78,11 +90,21 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Verify embedded PacketTunnelProvider
+      - name: Embed pre-signed Runner IPA into Pikmin Pilot app bundle
         run: |
           set -euxo pipefail
           APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           test -d "$APP"
+          cp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
+          test -s "$APP/PikminPilotEmbeddedRunner.ipa"
+          cmp EmbeddedRunner/PikminPilotRunner-signed.ipa "$APP/PikminPilotEmbeddedRunner.ipa"
+          shasum -a 256 "$APP/PikminPilotEmbeddedRunner.ipa" | tee AppEmbeddedRunnerSHA256.txt
+          echo "Embedded signed Runner copied byte-for-byte into host app bundle."
+
+      - name: Verify embedded PacketTunnelProvider layout
+        run: |
+          set -euxo pipefail
+          APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           APPEX="$(find "$APP/PlugIns" -maxdepth 1 -type d -name '*Tunnel*.appex' -print -quit)"
           test -n "$APPEX"
           test -d "$APPEX"
@@ -90,80 +112,25 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tee AppBundleIdentifier.txt
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist" | tee TunnelBundleIdentifier.txt
           /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist" | grep -F 'com.apple.networkextension.packet-tunnel'
-          test -f "$APP/archived-expanded-entitlements.xcent" || true
-          echo "Embedded PacketTunnelProvider layout verified: $APPEX"
 
-      - name: Build unsigned XCUITest Runner
+      - name: Package single Pikmin Pilot IPA
         run: |
           set -euxo pipefail
-          xcodebuild \
-            -project PikminPilot.xcodeproj \
-            -scheme PikminPilot \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build-runner \
-            build-for-testing \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
-
-          RUNNER_APP="$(find build-runner/Build/Products -type d -name '*-Runner.app' -print -quit)"
-          test -n "$RUNNER_APP"
-          test -d "$RUNNER_APP"
-
-          echo "RUNNER_APP=$RUNNER_APP" >> "$GITHUB_ENV"
-
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_APP/Info.plist" \
-            | tee RunnerBundleIdentifier.txt
-          plutil -p "$RUNNER_APP/Info.plist" > RunnerInfoPlist.txt
-
-          TEST_BUNDLE="$(find "$RUNNER_APP/PlugIns" -maxdepth 1 -type d -name '*.xctest' -print -quit)"
-          test -n "$TEST_BUNDLE"
-          test -d "$TEST_BUNDLE"
-          TEST_EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$TEST_BUNDLE/Info.plist")"
-          test -n "$TEST_EXEC"
-          test -f "$TEST_BUNDLE/$TEST_EXEC"
-          {
-            echo "RUNNER_APP=$RUNNER_APP"
-            echo "TEST_BUNDLE=$TEST_BUNDLE"
-            echo "TEST_EXEC=$TEST_EXEC"
-            file "$TEST_BUNDLE/$TEST_EXEC"
-            ls -lh "$TEST_BUNDLE/$TEST_EXEC"
-          } | tee RunnerNestedXCTestLayout.txt
-
-      - name: Package unsigned XCUITest Runner IPA
-        run: |
-          set -euxo pipefail
-          test -n "${RUNNER_APP:-}"
-          rm -rf RunnerPayload
-          mkdir RunnerPayload
-          cp -R "$RUNNER_APP" RunnerPayload/
-          mv RunnerPayload Payload
-          /usr/bin/zip -qry PikminPilotRunner-Stage9.1-Phone-Local-Runner-Self-Install-unsigned.ipa Payload
-          rm -rf Payload
-
-      - name: Package IPA
-        run: |
-          set -euxo pipefail
+          APP="build/Build/Products/Release-iphoneos/PikminPilot.app"
           rm -rf Payload
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/PikminPilot.app Payload/
-          /usr/bin/zip -qry PikminPilot-Stage9.1-Phone-Local-Runner-Self-Install-unsigned.ipa Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa Payload
+          unzip -l PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa | grep -F 'PikminPilotEmbeddedRunner.ipa'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PikminPilot-Stage9.1-Phone-Local-Runner-Self-Install-unsigned
+          name: PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned
           path: |
-            PikminPilot-Stage9.1-Phone-Local-Runner-Self-Install-unsigned.ipa
+            PikminPilot-Stage9.2-Embedded-Runner-Auto-Bootstrap-unsigned.ipa
             AppBundleIdentifier.txt
             TunnelBundleIdentifier.txt
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PikminPilotRunner-Stage9.1-Phone-Local-Runner-Self-Install-unsigned
-          path: |
-            PikminPilotRunner-Stage9.1-Phone-Local-Runner-Self-Install-unsigned.ipa
-            RunnerBundleIdentifier.txt
-            RunnerInfoPlist.txt
-            RunnerNestedXCTestLayout.txt
+            EmbeddedRunnerBundleIdentifier.txt
+            EmbeddedXCTestBundleIdentifier.txt
+            EmbeddedRunnerSHA256.txt
+            AppEmbeddedRunnerSHA256.txt
